@@ -235,6 +235,8 @@ export class KartPhysics {
   boostWindow = 0
   boostTime = 0
   boostKind: BoostKind = 'none'
+  /** true로 두면 다음 스텝에 순간 부스터 (출발 신호에 맞춘 스타트 부스터 — Kart.tsx가 건다) */
+  queueInstantBoost = false
   gear: Gear = 'P'
   private prevForward = false
   private prevBoost = false
@@ -384,6 +386,10 @@ export class KartPhysics {
       tmp.dir.set(fwd.x, 0, fwd.z)
       tmp.dir.normalize()
       b.applyImpulse(tmp.dir.scale(KART.mass * kick, tmp.force))
+    }
+    if (this.queueInstantBoost) {
+      this.queueInstantBoost = false
+      startBoost(KART.instantBoostTime, 'instant', KART.instantBoostKick)
     }
     // 순간 부스터: 드리프트 탈출 직후 ↑ 재입력 (게이지 소모 없음)
     if (this.boostWindow > 0) {

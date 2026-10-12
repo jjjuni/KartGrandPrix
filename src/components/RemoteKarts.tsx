@@ -1,19 +1,24 @@
+import { Html } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { Body, Box, Vec3 } from 'cannon-es'
 import { createRef, useEffect, useMemo, useRef, useState } from 'react'
 import { Quaternion, Vector3, type Group } from 'three'
-import { peers, sendHit, subscribe } from '../net/online'
+import { online, peers, sendHit, subscribe } from '../net/online'
 import { useWorld } from '../physics/PhysicsWorld'
 import { KART } from '../physics/vehicle'
 import { GROUP, materials } from '../physics/world'
 import KartModel from './KartModel'
+import SkidMarks, { type MarkWheel } from './SkidMarks'
 import Wheel from './Wheel'
 
 const COLORS = ['#1e88e5', '#43a047', '#fdd835', '#8e24aa', '#fb8c00', '#00acc1', '#d81b60', '#6d4c41']
+/** 플레이어별 카트 색 (미니맵 점도 같은 색) */
+export const peerColor = (id: number) => COLORS[id % COLORS.length]
 const FOLLOW = 12 // 받은 위치로 따라가는 속도 (1/s) — 초당 20번 오는 위치 사이를 부드럽게
 const _p = new Vector3()
 const _q = new Quaternion()
 const _prev = new Vector3()
+const _up = new Vector3()
 const HIT_SHARE = 0.7 // 부딪힌 순간 다가가던 속도 중 상대에게 넘기는 비율
 const HIT_COOLDOWN = 400 // ms — 붙어 있는 동안 매 스텝 보내지 않게
 
@@ -21,12 +26,45 @@ const HIT_COOLDOWN = 400 // ms — 붙어 있는 동안 매 스텝 보내지 않
  * 다른 사람의 카트 하나. 받은 위치를 따라 움직이는 키네마틱 충돌 상자를 내 물리 세계에 둔다 —
  * 내 카트는 부딪히면 튕기고, 상자는 밀리지 않는다 (상대 화면에서는 상대가 내 상자에 부딪혀 튕김)
  */
-function RemoteKart({ id }: { id: number }) {
+function RemoteKart({ id, name }: { id: number; name: string }) {
   const ref = useRef<Group>(null)
   const steer = useRef(0)
   const wheels = useMemo(() => [0, 1, 2, 3].map(() => createRef<Group>()), [])
   const placed = useRef(false)
   const spin = useRef(0)
+
+  // 바퀴 위치: 정지 시 바퀴 중심 = 무게중심 높이 (physics/vehicle.ts의 connectionY 설명 참고)
+  const wheelPos: [number, number, number][] = [
+    [KART.wheelX, 0, KART.frontZ],
+    [-KART.wheelX, 0, KART.frontZ],
+    [KART.wheelX, 0, KART.rearZ],
+    [-KART.wheelX, 0, KART.rearZ],
+  ]
+
+  // 타이어 자국: 받은 skid 비트가 켜진 바퀴의 접지점(바퀴 바로 아래)을 월드 좌표로
+  const marks = useMemo<MarkWheel[]>(
+    () => wheelPos.map(() => ({ sliding: false, point: new Vector3(), normal: new Vector3(), slip: 4 })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
+  const getMarks = useMemo(
+    () => () => {
+      const s = peers.get(id)
+      const g = ref.current
+      if (!s || !g) return null
+      const up = _up.set(0, 1, 0).applyQuaternion(g.quaternion)
+      marks.forEach((m, i) => {
+        m.sliding = ((s.skid >> i) & 1) === 1
+        if (!m.sliding) return
+        const [x, , z] = wheelPos[i]
+        m.point.set(x, -KART.wheelRadius, z).applyMatrix4(g.matrixWorld)
+        m.normal.copy(up)
+      })
+      return marks
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [id],
+  )
 
   const world = useWorld()
   const body = useMemo(() => {
@@ -79,46 +117,54 @@ function RemoteKart({ id }: { id: number }) {
     // 충돌 상자: 보이는 위치에 두고, 이번 프레임 이동량을 속도로 줘야 부딪힐 때 상대 속도가 반영된다
     body.position.set(g.position.x, g.position.y, g.position.z)
     body.quaternion.set(g.quaternion.x, g.quaternion.y, g.quaternion.z, g.quaternion.w)
-    if (dt > 0) body.velocity.set((g.position.x - _prev.x) / dt, (g.position.y - _prev.y) / dt, (g.position.z - _prev.z) / dt)
+    if (dt > 0)
+      body.velocity.set((g.position.x - _prev.x) / dt, (g.position.y - _prev.y) / dt, (g.position.z - _prev.z) / dt)
+    // 조향: 핸들·운전자 기울기(KartModel)와 앞바퀴 방향
+    steer.current += (s.steer - steer.current) * (1 - Math.exp(-FOLLOW * dt))
     spin.current += (s.speed / 3.6 / KART.wheelRadius) * dt
-    for (const w of wheels) w.current?.rotation.set(spin.current % (Math.PI * 2), 0, 0)
+    wheels.forEach((w, i) => w.current?.rotation.set(spin.current % (Math.PI * 2), i < 2 ? steer.current : 0, 0, 'YXZ'))
   })
 
-  // 바퀴 위치: 정지 시 바퀴 중심 = 무게중심 높이 (physics/vehicle.ts의 connectionY 설명 참고)
-  const wheelPos: [number, number, number][] = [
-    [KART.wheelX, 0, KART.frontZ],
-    [-KART.wheelX, 0, KART.frontZ],
-    [KART.wheelX, 0, KART.rearZ],
-    [-KART.wheelX, 0, KART.rearZ],
-  ]
   return (
-    <group ref={ref}>
-      {/* Kart.tsx의 MODEL_OFFSET_Y와 같은 값 */}
-      <group position={[0, 0.09, 0]}>
-        <KartModel steer={steer} color={COLORS[id % COLORS.length]} number={id % 100} />
-      </group>
-      {wheelPos.map((p, i) => (
-        <group key={i} position={p}>
-          <Wheel ref={wheels[i]} radius={KART.wheelRadius} width={0.25} left={i % 2 === 1} />
+    <>
+      <SkidMarks wheels={getMarks} />
+      <group ref={ref}>
+        {/* Kart.tsx의 MODEL_OFFSET_Y와 같은 값 */}
+        <group position={[0, 0.09, 0]}>
+          <KartModel steer={steer} color={peerColor(id)} number={id % 100} />
         </group>
-      ))}
-    </group>
+        {/* 머리 위 이름표 (화면을 향하는 HTML 글자 — 한글 그대로) */}
+        <Html position={[0, 1.55, -0.35]} center zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
+          <span className="name-tag" style={{ borderColor: peerColor(id) }}>
+            {name}
+          </span>
+        </Html>
+        {wheelPos.map((p, i) => (
+          <group key={i} position={p}>
+            <Wheel ref={wheels[i]} radius={KART.wheelRadius} width={0.25} left={i % 2 === 1} />
+          </group>
+        ))}
+      </group>
+    </>
   )
 }
 
 /** 같은 방에 접속한 다른 사람들의 카트 */
 export default function RemoteKarts() {
-  const [ids, setIds] = useState<number[]>([])
+  const [list, setList] = useState<{ id: number; name: string }[]>([])
   useEffect(() => {
     // 3D 장면이 로딩되는 동안 이미 들어와 있던 사람도 보이도록, 구독할 때 한 번 현재 목록을 읽는다
-    const sync = () => setIds([...peers.keys()])
+    const sync = () => {
+      const names = new Map(online.room?.members.map((m) => [m.id, m.name]))
+      setList([...peers.keys()].map((id) => ({ id, name: names.get(id) ?? '' })))
+    }
     sync()
     return subscribe(sync)
   }, [])
   return (
     <>
-      {ids.map((id) => (
-        <RemoteKart key={id} id={id} />
+      {list.map(({ id, name }) => (
+        <RemoteKart key={id} id={id} name={name} />
       ))}
     </>
   )

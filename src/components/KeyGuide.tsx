@@ -8,6 +8,7 @@ const ROWS: { keys: string[]; joiner?: string; label: string }[] = [
   { keys: ['Space'], label: '브레이크' },
   { keys: ['Shift', '←→'], joiner: '+', label: '드리프트' },
   { keys: ['↑'], label: '순간 부스터 (드리프트 직후)' },
+  { keys: ['↑'], label: '스타트 부스터 (초록불에 맞춰)' },
   { keys: ['↑', 'Z'], joiner: '+', label: '게이지 가득: 부스터' },
   { keys: ['R'], label: '트랙으로 복귀' },
 ]
@@ -25,7 +26,7 @@ export default function KeyGuide() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'KeyH' || e.repeat) return
+      if (e.code !== 'KeyH' || e.repeat || e.target instanceof HTMLInputElement) return
       setHidden((h) => {
         try {
           localStorage.setItem(STORAGE_KEY, h ? '0' : '1')

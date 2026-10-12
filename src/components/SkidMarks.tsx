@@ -1,7 +1,7 @@
 import { useFrame } from '@react-three/fiber'
-import { useMemo, type MutableRefObject } from 'react'
+import { useMemo } from 'react'
 import { BufferAttribute, BufferGeometry, DoubleSide, Vector3 } from 'three'
-import type { KartPhysics } from '../physics/vehicle'
+import type { WheelState } from '../physics/vehicle'
 
 const MAX_SEGMENTS = 3000 // 링 버퍼 크기 — 가득 차면 가장 오래된 자국부터 덮어쓴다
 const MARK_WIDTH = 0.22 // 타이어 폭보다 약간 좁게
@@ -11,12 +11,19 @@ const MIN_SLIP = 1.5 // 이 속도(m/s) 이상 미끄러질 때만 자국
 
 type Trail = { active: boolean; last: Vector3; left: Vector3; right: Vector3 }
 
+/** 자국을 남길 바퀴 하나: 미끄러지는지, 접지점·접지면 법선(월드 좌표), 미끄러지는 속도(진하기) */
+export type MarkWheel = { sliding: boolean; point: Vector3; normal: Vector3; slip: number }
+
+/** 내 카트 바퀴가 자국을 남길 만큼 미끄러지는지 (온라인으로도 이 판정을 보낸다) */
+export const isSkidding = (w: WheelState) => w.contact && w.load > 50 && w.slipSpeed > MIN_SLIP
+
 /**
  * 미끄러지는 바퀴가 지나간 자리에 남는 타이어 자국.
  * 하나의 BufferGeometry를 링 버퍼로 써서 수천 개의 사각형도 draw call 1번에 그린다.
  * 바퀴마다 이전 끝점(좌·우)을 이어 붙여 끊김 없는 띠가 되게 한다.
+ * wheels: 매 프레임 바퀴 상태를 돌려주는 함수 (내 카트는 물리 바퀴, 다른 사람은 받은 상태로 만든 값)
  */
-export default function SkidMarks({ kartRef }: { kartRef: MutableRefObject<KartPhysics | null> }) {
+export default function SkidMarks({ wheels }: { wheels: () => MarkWheel[] | null }) {
   const { geometry, positions, colors } = useMemo(() => {
     const geo = new BufferGeometry()
     const positions = new Float32Array(MAX_SEGMENTS * 4 * 3)
@@ -52,19 +59,18 @@ export default function SkidMarks({ kartRef }: { kartRef: MutableRefObject<KartP
   )
 
   useFrame(() => {
-    const kart = kartRef.current
-    if (!kart) return
+    const list = wheels()
+    if (!list) return
     let changed = false
-    kart.wheels.forEach((w, i) => {
+    list.forEach((w, i) => {
       const trail = state.trails[i]
-      const sliding = w.contact && w.load > 50 && w.slipSpeed > MIN_SLIP
-      if (!sliding) {
+      if (!w.sliding) {
         trail.active = false
         return
       }
       const { p, n, dir, side, l, r } = state
-      n.set(w.hitNormal.x, w.hitNormal.y, w.hitNormal.z)
-      p.set(w.hitPoint.x, w.hitPoint.y, w.hitPoint.z).addScaledVector(n, LIFT)
+      n.copy(w.normal)
+      p.copy(w.point).addScaledVector(n, LIFT)
       if (!trail.active) {
         trail.active = true
         trail.last.copy(p)
@@ -90,7 +96,7 @@ export default function SkidMarks({ kartRef }: { kartRef: MutableRefObject<KartP
         k * 12,
       )
       // 많이 미끄러질수록 진하게
-      const alpha = Math.min(0.85, 0.4 + (w.slipSpeed - MIN_SLIP) * 0.08)
+      const alpha = Math.min(0.85, 0.4 + (w.slip - MIN_SLIP) * 0.08)
       for (let v = 0; v < 4; v++) colors.set([0.05, 0.05, 0.05, alpha], (k * 4 + v) * 4)
       state.next = (k + 1) % MAX_SEGMENTS
 

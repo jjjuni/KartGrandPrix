@@ -12,13 +12,14 @@ import {
 } from 'three'
 import { kartState } from '../game/kartState'
 import { useControls } from '../hooks/useControls'
-import { onHit, onSpawn } from '../net/online'
+import { canDrive, tryStartBoost, updateLap } from '../game/race'
+import { onHit, onSpawn, sendFinish } from '../net/online'
 import { useWorld } from '../physics/PhysicsWorld'
 import { KART, KartPhysics } from '../physics/vehicle'
 import { createSurfaceTracker } from '../track/surface'
-import { WALL_OFFSET, gridPose, nearestSample, poseAt } from '../track/trackData'
+import { WALL_OFFSET, centerPoints, gridPose, nearestSample, poseAt } from '../track/trackData'
 import KartModel from './KartModel'
-import SkidMarks from './SkidMarks'
+import SkidMarks, { isSkidding, type MarkWheel } from './SkidMarks'
 import Wheel from './Wheel'
 
 // 주행·드리프트·부스터 수치는 physics/vehicle.ts의 KART에서 조절
@@ -58,7 +59,7 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
       kart.body.velocity.x += vx
       kart.body.velocity.z += vz
     })
-    // 온라인 접속 시 서버가 정해 준 출발 그리드 칸으로 (다른 사람과 겹치지 않게)
+    // 방에 들어가면 서버가 정해 준 출발 그리드 칸으로 (다른 사람과 겹치지 않게), 대기실로 돌아가면 0번 칸
     onSpawn((slot) => {
       const pose = gridPose(slot)
       kart.reset(pose.position, pose.yaw)
@@ -79,7 +80,24 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
   const flame = useRef<Group>(null)
   const steer = useRef(0) // KartModel의 핸들·운전자 기울기용
 
-  const game = useRef({ prevReset: false, flippedTime: 0, offTrackTime: 0, camYaw: yaw })
+  const game = useRef({ prevReset: false, prevForward: false, flippedTime: 0, offTrackTime: 0, camYaw: yaw })
+
+  // 타이어 자국용 바퀴 상태 (매 프레임 같은 객체를 채워서 돌려준다)
+  const markWheels = useRef<MarkWheel[]>(
+    [0, 1, 2, 3].map(() => ({ sliding: false, point: new Vector3(), normal: new Vector3(), slip: 0 })),
+  )
+  const getMarkWheels = useRef(() => {
+    const kart = kartRef.current
+    if (!kart) return null
+    kart.wheels.forEach((w, i) => {
+      const m = markWheels.current[i]
+      m.sliding = isSkidding(w)
+      m.point.set(w.hitPoint.x, w.hitPoint.y, w.hitPoint.z)
+      m.normal.set(w.hitNormal.x, w.hitNormal.y, w.hitNormal.z)
+      m.slip = w.slipSpeed
+    })
+    return markWheels.current
+  }).current
   const tmp = useRef({
     pos: new Vector3(),
     quat: new Quaternion(),
@@ -107,6 +125,14 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
     input.boost = c.boost || c.tapped.has('boost')
     c.tapped.clear()
     input.drift = c.drift
+    // 스타트 부스터: 초록불에 맞춰 ↑를 새로 누르면 (판정은 race.ts)
+    const gs = game.current
+    if (input.forward && !gs.prevForward && tryStartBoost(performance.now())) kart.queueInstantBoost = true
+    gs.prevForward = input.forward
+    // 출발 신호 전(대기실 · 대기 · 카운트다운)에는 좌우 조향만
+    if (!canDrive()) {
+      input.forward = input.backward = input.brake = input.drift = input.boost = false
+    }
 
     // R은 가장 가까운 트랙 위로, 뒤집히거나 방벽 밖으로 나가거나 떨어져도 자동 리셋
     const g = game.current
@@ -116,6 +142,8 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
     t.up.set(0, 1, 0).applyQuaternion(t.quat.set(q.x, q.y, q.z, q.w))
     g.flippedTime = t.up.y < 0.3 ? g.flippedTime + delta : 0
     const nearest = nearestSample(b.position.x, b.position.z)
+    // 바퀴 세기 — 마지막 바퀴를 마친 순간 서버에 도착을 알린다 (기록은 서버가 잰다)
+    if (updateLap(nearest.index, centerPoints.length)) sendFinish()
     g.offTrackTime = nearest.distance > WALL_OFFSET + 1.5 ? g.offTrackTime + delta : 0
     const resetPressed = c.reset && !g.prevReset
     g.prevReset = c.reset
@@ -169,6 +197,9 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
     s.boostKind = kart.boostKind
     s.boostDuration = kart.boostKind === 'instant' ? KART.instantBoostTime : KART.boostDuration
     s.gear = kart.gear
+    s.steer = kart.steer
+    // 미끄러지는 바퀴 (비트 0~3 = 바퀴 0~3) — 다른 사람 화면에 타이어 자국을 그리는 데 쓴다
+    s.skid = kart.wheels.reduce((bits, w, i) => (isSkidding(w) ? bits | (1 << i) : bits), 0)
     s.offRoad = kart.offRoadWheels >= 2
     s.airborne = kart.groundedWheels === 0
     const boosting = kart.boostTime > 0
@@ -241,7 +272,7 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
         ))}
       </group>
       {/* 타이어 자국 (월드 좌표) */}
-      <SkidMarks kartRef={kartRef} />
+      <SkidMarks wheels={getMarkWheels} />
     </>
   )
 }

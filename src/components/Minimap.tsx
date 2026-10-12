@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { kartState } from '../game/kartState'
+import { peers } from '../net/online'
+import { peerColor } from './RemoteKarts'
 import { JUMP_LIP, ROAD_WIDTH, centerPoints, frames, indexAtS } from '../track/trackData'
 
 const SIZE = 180
@@ -35,6 +37,7 @@ export default function Minimap() {
   }, [])
 
   const marker = useRef<SVGGElement>(null)
+  const others = useRef<SVGGElement>(null)
   useEffect(() => {
     let raf = 0
     const tick = () => {
@@ -42,6 +45,25 @@ export default function Minimap() {
       // 진행 방향: 월드 +Z(지도 위)에서 +X(지도 왼쪽)로 도는 각 → 지도에서는 반시계 회전
       const deg = (-kartState.heading * 180) / Math.PI
       marker.current?.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${deg.toFixed(1)})`)
+      // 다른 사람: 카트 색 점 (들어오면 만들고, 나가면 지운다)
+      const g = others.current
+      if (g) {
+        for (const dot of [...g.children]) if (!peers.has(Number((dot as SVGElement).dataset.id))) dot.remove()
+        for (const [id, s] of peers) {
+          let dot = g.querySelector<SVGCircleElement>(`[data-id="${id}"]`)
+          if (!dot) {
+            dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle')
+            dot.dataset.id = String(id)
+            dot.setAttribute('r', '4')
+            dot.setAttribute('class', 'minimap-peer')
+            dot.setAttribute('fill', peerColor(id))
+            g.appendChild(dot)
+          }
+          const [px, py] = toMap(s.x, s.z)
+          dot.setAttribute('cx', px.toFixed(1))
+          dot.setAttribute('cy', py.toFixed(1))
+        }
+      }
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -56,6 +78,8 @@ export default function Minimap() {
         <path d={path} className="minimap-road" strokeWidth={road} />
         <line x1={start[0][0]} y1={start[0][1]} x2={start[1][0]} y2={start[1][1]} className="minimap-start" />
         <circle cx={jump[0]} cy={jump[1]} r={3} className="minimap-jump" />
+        <g ref={others} />
+        {/* 내 카트는 맨 위에 */}
         <g ref={marker}>
           <polygon points="0,-7 5,5 0,2.5 -5,5" className="minimap-kart" />
         </g>

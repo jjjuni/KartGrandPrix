@@ -1,9 +1,43 @@
-import { useMemo } from 'react'
+import { useFrame } from '@react-three/fiber'
+import { useMemo, useRef } from 'react'
+import { MeshStandardMaterial } from 'three'
+import { race, type Light } from '../game/race'
 import { makeCanvasTexture } from '../utils/canvasTexture'
 import { GRID_SLOTS, ROAD_WIDTH, WALL_OFFSET, gridOffset, startPose } from './trackData'
 
 const GATE_HEIGHT = 6.4
 const TOWER = 0.9 // 트러스 기둥 한 변
+
+/** 신호등 색 (off: 꺼진 렌즈) */
+const LAMP: Record<Light, { color: string; glow: string; intensity: number }> = {
+  off: { color: '#1a1d21', glow: '#000000', intensity: 0 },
+  red: { color: '#7a0d0d', glow: '#ff2a2a', intensity: 2 },
+  yellow: { color: '#7a5a00', glow: '#ffc400', intensity: 2 },
+  green: { color: '#1b5e20', glow: '#4cff6a', intensity: 1.6 },
+}
+
+/** 출발 신호등 램프 5개 — race.light가 바뀌면 다섯 개가 함께 바뀐다 (material 하나 공유) */
+function SignalLamps() {
+  const mat = useMemo(() => new MeshStandardMaterial({ toneMapped: false }), [])
+  const shown = useRef<Light | null>(null)
+  useFrame(() => {
+    if (shown.current === race.light) return
+    shown.current = race.light
+    const l = LAMP[race.light]
+    mat.color.set(l.color)
+    mat.emissive.set(l.glow)
+    mat.emissiveIntensity = l.intensity
+  })
+  return (
+    <>
+      {[-2, -1, 0, 1, 2].map((k) => (
+        <mesh key={k} position={[k * 0.65, 0, -0.16]} rotation={[Math.PI / 2, 0, 0]} material={mat}>
+          <cylinderGeometry args={[0.22, 0.22, 0.05, 20]} />
+        </mesh>
+      ))}
+    </>
+  )
+}
 
 /** 사각 트러스 기둥: 모서리 파이프 4개 + 일정 간격 가로대·대각선 */
 function TrussTower({ height }: { height: number }) {
@@ -162,12 +196,7 @@ export default function StartLine() {
           <boxGeometry args={[3.4, 0.7, 0.3]} />
           <meshStandardMaterial color="#111" roughness={0.6} />
         </mesh>
-        {[-2, -1, 0, 1, 2].map((k) => (
-          <mesh key={k} position={[k * 0.65, 0, -0.16]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.22, 0.22, 0.05, 20]} />
-            <meshStandardMaterial color="#2e7d32" emissive="#4cff6a" emissiveIntensity={1.6} toneMapped={false} />
-          </mesh>
-        ))}
+        <SignalLamps />
       </group>
     </group>
   )

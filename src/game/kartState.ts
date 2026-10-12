@@ -25,6 +25,10 @@ export const kartState = {
   /** Z 부스터 지속 시간 (게이지 표시용) */
   boostDuration: 1,
   gear: 'P' as Gear,
+  /** 앞바퀴 조향각 (rad) — 온라인 전송용 */
+  steer: 0,
+  /** 미끄러지는 바퀴 비트마스크 (타이어 자국) — 온라인 전송용 */
+  skid: 0,
   /** 잔디 위 바퀴가 2개 이상 */
   offRoad: false,
   airborne: false,

@@ -56,6 +56,8 @@ export function useControls() {
     const set = (e: KeyboardEvent, pressed: boolean) => {
       const action = KEY_MAP[e.code]
       if (!action) return
+      // 닉네임·방 이름 입력 중에는 글자 입력이 우선 (W·A·S·D·스페이스를 막지 않게)
+      if (pressed && e.target instanceof HTMLInputElement) return
       e.preventDefault() // 방향키·스페이스로 페이지가 스크롤되지 않게
       controls.current[action] = pressed
       if (pressed && !e.repeat) controls.current.tapped.add(action)
