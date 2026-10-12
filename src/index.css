@@ -1,0 +1,326 @@
+:root {
+  /* 계기판 팔레트 */
+  --gunmetal: #1d2229;
+  --face: #262c33;
+  --tick: #f2f4f6;
+  --tick-dim: #8a939c;
+  --nitro: #38c6f4; /* 부스터 — 배기 화염과 같은 색 */
+  --amber: #ffb547; /* 드리프트·게이지 충전 */
+  --alert: #e5483b;
+  --panel: rgba(22, 26, 31, 0.78);
+  --gauge-font: 'Saira Condensed', 'Arial Narrow', system-ui, sans-serif;
+  --ui-font: system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #bcd6ec;
+}
+
+kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.7em;
+  height: 1.7em;
+  padding: 0 0.35em;
+  box-sizing: border-box;
+  border-radius: 5px;
+  background: linear-gradient(#f4f6f8, #cfd5db);
+  box-shadow:
+    0 2px 0 #7d8791,
+    0 3px 4px rgba(0, 0, 0, 0.35);
+  color: #20262d;
+  font: 600 12px/1 var(--gauge-font);
+}
+
+kbd.wide {
+  padding: 0 0.6em;
+}
+
+/* ---------- 하단 중앙 계기판 ---------- */
+.cluster {
+  position: fixed;
+  left: 50%;
+  bottom: 10px;
+  width: clamp(190px, 24vw, 270px);
+  transform: translateX(-50%);
+  pointer-events: none;
+  user-select: none;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45));
+}
+
+.cluster svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.dial-tick {
+  stroke: var(--tick);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.dial-tick.major {
+  stroke-width: 2.6;
+}
+.dial-tick.boost {
+  stroke: var(--nitro);
+}
+
+.dial-num {
+  fill: var(--tick);
+  font: 600 15px var(--gauge-font);
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.dial-num.boost {
+  fill: var(--nitro);
+}
+
+.dial-boost-zone {
+  fill: none;
+  stroke: var(--nitro);
+  stroke-width: 6;
+  opacity: 0.35;
+}
+
+.dial-speed {
+  fill: #fff;
+  font: 700 40px var(--gauge-font);
+  text-anchor: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+.dial-unit {
+  fill: var(--tick-dim);
+  font: 500 11px var(--gauge-font);
+  text-anchor: middle;
+  letter-spacing: 0.04em;
+}
+
+.dial-gear {
+  fill: #4b545e;
+  font: 700 15px var(--gauge-font);
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.dial-gear.on {
+  fill: var(--amber);
+}
+
+.dial-needle {
+  fill: var(--alert);
+}
+
+.boost-track {
+  fill: #11151a;
+}
+.boost-fill {
+  fill: var(--amber);
+}
+
+.boost-label {
+  fill: var(--tick-dim);
+  font: 500 12px var(--ui-font);
+  text-anchor: middle;
+}
+
+/* 게이지가 가득: Z로 쓸 수 있음 */
+.cluster.ready .boost-fill,
+.cluster.boosting .boost-fill {
+  fill: var(--nitro);
+  filter: url(#glow);
+}
+.cluster.ready .boost-label {
+  fill: var(--nitro);
+  font-weight: 700;
+}
+.cluster.boosting .dial-needle {
+  fill: var(--nitro);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .cluster.ready .boost-fill {
+    animation: ready-pulse 0.9s ease-in-out infinite;
+  }
+}
+
+@keyframes ready-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* 상태 표시 (드리프트, 부스터 등) — 다이얼 위에 필요한 순간에만 */
+.cluster-status {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--panel);
+  color: #fff;
+  font: 700 14px var(--ui-font);
+  white-space: nowrap;
+}
+.cluster-status[data-tone='drift'] {
+  color: var(--amber);
+}
+.cluster-status[data-tone='boost'] {
+  color: var(--nitro);
+}
+.cluster-status[data-tone='prompt'] {
+  color: #fff176;
+}
+.cluster-status[data-tone='warn'] {
+  color: #ff8a7f;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .cluster-status[data-tone='prompt'] {
+    animation: ready-pulse 0.25s steps(2) infinite;
+  }
+}
+
+/* 미니맵 아래 접속 상태 */
+.online-badge {
+  position: fixed;
+  top: calc(16px + clamp(120px, 16vw, 190px) + 8px);
+  right: 16px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--tick-dim);
+  font: 600 12px var(--ui-font);
+  pointer-events: none;
+}
+.online-badge.on {
+  color: #7ee08a;
+}
+
+/* ---------- 좌측 하단 조작 안내 ---------- */
+.keyguide {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  max-width: min(300px, calc(50vw - 160px));
+  padding: 10px 12px 8px;
+  border-radius: 12px;
+  background: var(--panel);
+  color: #e9edf1;
+  font: 12px/1.3 var(--ui-font);
+  pointer-events: none;
+  user-select: none;
+}
+
+.keyguide dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 10px;
+  margin: 0;
+}
+
+.keyguide-row {
+  display: contents;
+}
+
+.keyguide dt {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+}
+.keyguide dt > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.keyguide dd {
+  margin: 0;
+  align-self: center;
+  color: #c3cad1;
+}
+
+.keyguide-join {
+  color: var(--tick-dim);
+  font-size: 11px;
+}
+
+.keyguide-hint {
+  margin: 10px 0 0;
+  color: var(--tick-dim);
+  font-size: 11px;
+}
+.keyguide-hint kbd {
+  min-width: 1.5em;
+  height: 1.5em;
+  font-size: 10px;
+}
+
+.keyguide.collapsed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+/* 좁은 화면: 계기판과 겹치지 않게 접힌 상태처럼 작게 */
+@media (max-width: 720px) {
+  .keyguide:not(.collapsed) dd {
+    display: none;
+  }
+}
+
+/* ---------- 우측 상단 미니맵 ---------- */
+.minimap {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: clamp(120px, 16vw, 190px);
+  aspect-ratio: 1;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(22, 26, 31, 0.55);
+  pointer-events: none;
+}
+
+.minimap svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.minimap-edge,
+.minimap-road {
+  fill: none;
+  stroke-linejoin: round;
+}
+.minimap-edge {
+  stroke: rgba(255, 255, 255, 0.55);
+}
+.minimap-road {
+  stroke: #3e464f;
+}
+
+.minimap-start {
+  stroke: #fff;
+  stroke-width: 2.5;
+}
+
+.minimap-jump {
+  fill: var(--amber);
+}
+
+.minimap-kart {
+  fill: var(--nitro);
+  stroke: #0d1013;
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
