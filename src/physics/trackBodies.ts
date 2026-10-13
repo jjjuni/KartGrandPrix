@@ -1,5 +1,5 @@
 import { Body, Box, Heightfield, Quaternion, Vec3 } from 'cannon-es'
-import { TERRAIN_ELEMENT, TERRAIN_MAX_Z, TERRAIN_MIN_X, terrainHeights } from '../track/terrain'
+import { TERRAIN_ELEMENT, getTerrain } from '../track/terrain'
 import type { Segment } from '../track/trackData'
 import { GROUP, materials } from './world'
 
@@ -14,8 +14,9 @@ export function createGroundBody() {
     material: materials.ground,
     collisionFilterGroup: GROUP.STATIC,
   })
-  body.addShape(new Heightfield(terrainHeights, { elementSize: TERRAIN_ELEMENT }))
-  body.position.set(TERRAIN_MIN_X, 0, TERRAIN_MAX_Z)
+  const { heights, minX, maxZ } = getTerrain()
+  body.addShape(new Heightfield(heights, { elementSize: TERRAIN_ELEMENT }))
+  body.position.set(minX, 0, maxZ)
   body.quaternion.setFromEuler(-Math.PI / 2, 0, 0)
   return body
 }

@@ -1,99 +1,37 @@
 import { CatmullRomCurve3, Euler, Quaternion, Vector3 } from 'three'
+import { MAPS, type MapDef, type MapId } from './maps'
 
-/** 트랙 전체 크기 배율 — 제어점과 주행 거리(s) 기준 위치에 곱한다. 지형·나무 범위도 따라감 */
-export const TRACK_SCALE = 2.1
+/**
+ * 지금 맵의 트랙 데이터. 맵을 바꿀 때 loadTrack()이 아래 값들을 모두 다시 계산한다.
+ * 다른 파일은 이름으로 가져다 쓰면 된다 (ES 모듈의 export let은 바뀐 값이 그대로 보인다).
+ * 트랙에서 파생되는 값을 따로 캐시하는 곳은 trackVersion이 바뀌었는지 보고 다시 계산한다.
+ */
+export let currentMap: MapDef = MAPS.forest
+/** loadTrack을 부를 때마다 1씩 증가 */
+export let trackVersion = 0
+
 export const ROAD_WIDTH = 24
 export const CURB_OFFSET = ROAD_WIDTH / 2 + 0.4 // 연석 중심선 (도로 가장자리 바로 바깥)
 export const WALL_OFFSET = ROAD_WIDTH / 2 + 3.5 // 방벽 위치 (연석 밖으로 잔디 여유 공간)
 
-// 서킷 형태를 결정하는 제어점 (x, z). 순서대로 이어지는 닫힌 곡선이 된다. 전체 길이 약 3,030m (TRACK_SCALE 적용 후)
-// 출발 직선 → 90도 코너 → 시케인 → 낙타등 직선 → 언덕 위 동쪽 헤어핀 → 내리막 브레이킹
-// → 골짜기 연속 S자 → 오르막 → 북서쪽 헤어핀 → 점프대 직선 → 복합 코너 → 결승선
-const CONTROL_POINTS: [number, number][] = [
-  [0, -140],
-  [80, -142],
-  [130, -132],
-  [160, -108],
-  [170, -75], // 1번 코너
-  [158, -42], // 시케인
-  [168, -8],
-  [174, 30],
-  [178, 70],
-  [186, 108], // 동쪽 헤어핀 (언덕 정상)
-  [170, 140],
-  [140, 144],
-  [122, 120],
-  [116, 85],
-  [108, 50],
-  [86, 26],
-  [54, 24],
-  [22, 40], // 연속 S자
-  [-12, 24],
-  [-46, 40],
-  [-82, 30],
-  [-110, 58],
-  [-118, 105],
-  [-114, 156],
-  [-128, 184], // 북서쪽 헤어핀
-  [-156, 194],
-  [-176, 168],
-  [-176, 120],
-  [-178, 40], // 점프대 직선
-  [-168, -40],
-  [-140, -100],
-  [-90, -135],
-  [-40, -142],
-]
-// 제어점을 바꿀 때 지킬 것
-// - 최소 회전반경이 WALL_OFFSET보다 충분히 클 것 (배율 적용 후 약 27m, S자·헤어핀) — 작으면 안쪽 방벽이 꼬임
-// - 서로 다른 구간끼리 2 * WALL_OFFSET + 여유 이상 떨어질 것 (배율 적용 후 최소 약 122m)
-// - 지형 범위(terrain.ts) 안쪽에 BLEND 이상 여유를 둘 것
-
-export const centerCurve = new CatmullRomCurve3(
-  CONTROL_POINTS.map(([x, z]) => new Vector3(x * TRACK_SCALE, 0, z * TRACK_SCALE)),
-  true, // closed
-  'centripetal',
-)
-
-export const TRACK_LENGTH = centerCurve.getLength()
-const SAMPLES = Math.round(TRACK_LENGTH / 0.7) // 약 0.7m 간격
-export const SAMPLE_SPACING = TRACK_LENGTH / SAMPLES
-
-// ---------------------------------------------------------------------------
-// 높낮이: 출발선으로부터의 주행 거리 s(m)에 대한 함수
-// ---------------------------------------------------------------------------
-
-/** 기본 언덕 프로필 [s(m), 높이(m)] — 키 사이를 코사인 보간 */
-const PROFILE_KEYS = (
-  [
-  [0, 0],
-  [80, 0],
-  [200, 5], // 1번 코너~시케인은 오르막
-  [290, 6],
-  [380, 6], // 낙타등 직선
-  [440, 8], // 동쪽 헤어핀 (언덕 정상)
-  [490, 8],
-  [600, 1], // 내리막 브레이킹 → 왼쪽 코너
-  [780, 1], // 골짜기 S자
-  [900, 6],
-  [1040, 4], // 북서쪽 헤어핀 → 고원 (점프대가 있는 직선)
-  [1190, 4],
-  [1300, 0],
-  ] as [number, number][]
-).map(([d, h]) => [d * TRACK_SCALE, h] as [number, number])
+export let TRACK_LENGTH = 0
+let SAMPLES = 0
+export let SAMPLE_SPACING = 0
+/** 높이 프로필 [s(m), 높이(m)] — 키 사이를 코사인 보간 */
+let profileKeys: [number, number][] = []
 
 /**
  * 낙타등 언덕: 오르막 정상 부근 곡률 반경 약 51m → 약 80km/h 이상에서 정상에서 살짝 뜨고,
- * 내리막은 길고 완만해서(최대 경사 약 5도) 경사면에 부드럽게 착지한다
+ * 내리막은 길고 완만해서(최대 경사 약 5도) 경사면에 부드럽게 착지한다. 없는 맵은 null
  */
-export const CAMELBACK = { center: 330 * TRACK_SCALE, riseLength: 25, fallLength: 45, height: 2.5 }
+export let CAMELBACK: { center: number; riseLength: number; fallLength: number; height: number } | null = null
 
 /**
  * 테이블탑 점프대: 킥 램프 → 평평한 윗면 → 완만한 착지 경사.
  * 느리면 그냥 넘어가고, 빠르면 립에서 떠서 착지 경사에 내려앉는다.
  */
 export const JUMP = {
-  start: 1100 * TRACK_SCALE, // 킥 램프 시작 s
+  start: 0, // 킥 램프 시작 s (맵마다 loadTrack에서 정함)
   kickLength: 16,
   /**
    * 킥 곡선 지수 — 클수록 립 직전이 가팔라진다. 립 각도 ≈ atan(height * kickPower / kickLength) ≈ 10도.
@@ -106,14 +44,20 @@ export const JUMP = {
   landingLength: 44,
   height: 2.2,
 }
-export const JUMP_LIP = JUMP.start + JUMP.kickLength
+export let JUMP_LIP = 0
+
+/** 빙판 구간 [시작 s, 끝 s] (m) — 이 구간의 도로는 미끄럽다 */
+export let ICE_RANGES: [number, number, 1 | -1][] = []
+
+/** 코스가 차지하는 범위 (중심선 기준, m) — 지형·장식 배치 범위를 정한다 */
+export let trackBounds = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 }
 
 function wrapS(s: number) {
   return ((s % TRACK_LENGTH) + TRACK_LENGTH) % TRACK_LENGTH
 }
 
 function baseProfile(s: number) {
-  const keys = PROFILE_KEYS
+  const keys = profileKeys
   for (let k = 0; k < keys.length; k++) {
     const [s0, h0] = keys[k]
     const [s1, h1] = k + 1 < keys.length ? keys[k + 1] : [TRACK_LENGTH, keys[0][1]]
@@ -126,6 +70,7 @@ function baseProfile(s: number) {
 }
 
 function camelback(s: number) {
+  if (!CAMELBACK) return 0
   const { center, riseLength, fallLength, height } = CAMELBACK
   const d = s - center
   const half = d < 0 ? riseLength : fallLength
@@ -154,20 +99,10 @@ export function roadHeightAt(s: number) {
 // ---------------------------------------------------------------------------
 
 /** 중심선을 일정 간격으로 샘플링한 점 (y = 도로 높이). 마지막 점 = 첫 점이 되지 않도록 SAMPLES개만 */
-export const centerPoints = centerCurve
-  .getSpacedPoints(SAMPLES)
-  .slice(0, SAMPLES)
-  .map((p, i) => p.setY(roadHeightAt(i * SAMPLE_SPACING)))
+export let centerPoints: Vector3[] = []
 
 /** 각 샘플의 수평 진행 방향(접선)과 왼쪽 방향(법선) — 높낮이와 무관하게 XZ 평면 기준 */
-export const frames = centerPoints.map((_, i) => {
-  const next = centerPoints[(i + 1) % SAMPLES]
-  const prev = centerPoints[(i - 1 + SAMPLES) % SAMPLES]
-  const tangent = new Vector3(next.x - prev.x, 0, next.z - prev.z).normalize()
-  // 진행 방향 기준 왼쪽 (+Y를 위로 두고 tangent를 반시계 90도 회전)
-  const left = new Vector3(tangent.z, 0, -tangent.x)
-  return { tangent, left }
-})
+export let frames: { tangent: Vector3; left: Vector3 }[] = []
 
 /** 주행 거리 s에 해당하는 샘플 인덱스 */
 export function indexAtS(s: number) {
@@ -261,11 +196,7 @@ export function poseAt(index: number) {
 
 /** 출발선 위치와 진행 방향 */
 const startIndex = 0
-export const startPose = {
-  position: centerPoints[startIndex].clone(),
-  yaw: Math.atan2(frames[startIndex].tangent.x, frames[startIndex].tangent.z),
-  index: startIndex,
-}
+export let startPose = { position: new Vector3(), yaw: 0, index: startIndex }
 
 /** 출발 그리드 칸 수 (= 방 최대 인원, server/relay.js의 MAX_PER_ROOM과 같게) */
 export const GRID_SLOTS = 8
@@ -285,9 +216,65 @@ export function gridPose(k: number) {
 }
 
 /** 각 샘플의 부호 있는 곡률 방향 (+: 왼쪽으로 도는 코너, -: 오른쪽) 과 크기 */
-export const curvature = frames.map((f, i) => {
-  const next = frames[(i + 6) % frames.length].tangent
-  const prev = frames[(i - 6 + frames.length) % frames.length].tangent
-  // 접선이 왼쪽(left)으로 돌아가면 좌회전 코너
-  return next.clone().sub(prev).dot(f.left)
-})
+export let curvature: number[] = []
+
+/** 샘플 index에서 중심선 왼쪽으로 lateral(m) 떨어진 도로가 빙판인지 */
+export function isIceAt(index: number, lateral: number) {
+  const d = index * SAMPLE_SPACING
+  return ICE_RANGES.some(([a, b, side]) => d >= a && d <= b && lateral * side > 0)
+}
+
+// ---------------------------------------------------------------------------
+// 맵 불러오기
+// ---------------------------------------------------------------------------
+
+/** 맵의 코스로 트랙 데이터를 모두 다시 계산한다 (같은 맵이면 아무것도 안 함) */
+export function loadTrack(id: MapId) {
+  const def = MAPS[id] ?? MAPS.forest
+  if (def === currentMap && trackVersion > 0) return
+  currentMap = def
+  const k = def.scale
+  const curve = new CatmullRomCurve3(
+    def.controlPoints.map(([x, z]) => new Vector3(x * k, 0, z * k)),
+    true, // closed
+    'centripetal',
+  )
+  TRACK_LENGTH = curve.getLength()
+  SAMPLES = Math.round(TRACK_LENGTH / 0.7) // 약 0.7m 간격
+  SAMPLE_SPACING = TRACK_LENGTH / SAMPLES
+  profileKeys = def.profile.map(([d, h]) => [d * k, h])
+  CAMELBACK = def.camelback && { ...def.camelback, center: def.camelback.center * k }
+  JUMP.start = def.jumpStart * k
+  JUMP_LIP = JUMP.start + JUMP.kickLength
+  ICE_RANGES = def.surface.ice.map(([a, b, side]) => [a * k, b * k, side])
+
+  centerPoints = curve
+    .getSpacedPoints(SAMPLES)
+    .slice(0, SAMPLES)
+    .map((p, i) => p.setY(roadHeightAt(i * SAMPLE_SPACING)))
+  frames = centerPoints.map((_, i) => {
+    const next = centerPoints[(i + 1) % SAMPLES]
+    const prev = centerPoints[(i - 1 + SAMPLES) % SAMPLES]
+    const tangent = new Vector3(next.x - prev.x, 0, next.z - prev.z).normalize()
+    // 진행 방향 기준 왼쪽 (+Y를 위로 두고 tangent를 반시계 90도 회전)
+    const left = new Vector3(tangent.z, 0, -tangent.x)
+    return { tangent, left }
+  })
+  curvature = frames.map((f, i) => {
+    const next = frames[(i + 6) % frames.length].tangent
+    const prev = frames[(i - 6 + frames.length) % frames.length].tangent
+    // 접선이 왼쪽(left)으로 돌아가면 좌회전 코너
+    return next.clone().sub(prev).dot(f.left)
+  })
+  startPose = {
+    position: centerPoints[startIndex].clone(),
+    yaw: Math.atan2(frames[startIndex].tangent.x, frames[startIndex].tangent.z),
+    index: startIndex,
+  }
+  const xs = centerPoints.map((p) => p.x)
+  const zs = centerPoints.map((p) => p.z)
+  trackBounds = { minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) }
+  trackVersion++
+}
+
+loadTrack('forest')

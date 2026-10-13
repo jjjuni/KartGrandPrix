@@ -1,9 +1,13 @@
-import { useEffect, useState } from 'react'
-import { raceProgress } from '../game/race'
-import { leaveRoom, peers, startRace, type Member, type RoomDetail } from '../net/online'
+import { useEffect, useRef, useState } from 'react'
+import { lapTime, raceProgress } from '../game/race'
+import { leaveRoom, peers, setRoomSettings, startRace, toggleReady, type Member, type RoomDetail } from '../net/online'
+import type { SpeedClass } from '../physics/vehicle'
 import { GRID_SLOTS } from '../track/trackData'
 import { formatTime } from './format'
 import { useOnline, useRace } from './hooks'
+import { SPEED_LABEL } from './LobbyScreen'
+import { MAPS } from '../track/maps'
+import MapPicker from './MapPicker'
 
 type Standing = { member: Member; time: number | null; progress: number }
 
@@ -39,7 +43,80 @@ function useTick(active: boolean) {
   }, [active])
 }
 
+/** 지금 바퀴의 랩타임 — 매 프레임 글자만 바꾼다 (리렌더링 없이) */
+function LapTime() {
+  const ref = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    let raf = 0
+    const tick = () => {
+      if (ref.current) ref.current.textContent = formatTime(Math.max(0, lapTime()))
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [])
+  return <span className="lap-time" ref={ref} />
+}
+
 /** 방 안 (주행 화면 왼쪽 위): 출발 전에는 출발 명단(그리드 순서), 초록불 뒤에는 실시간 순위 */
+/** 방장용 태그: 누르면 아래로 고르는 목록이 펼쳐진다 (바깥 클릭 · Esc로 닫힘) */
+function TagMenu<T extends string | number>(props: {
+  label: string
+  value: T
+  options: T[]
+  text: (v: T) => string
+  onPick: (v: T) => void
+  className?: string
+}) {
+  const { label, value, options, text, onPick, className = '' } = props
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const outside = (e: PointerEvent) => !box.current?.contains(e.target as Node) && setOpen(false)
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    window.addEventListener('pointerdown', outside)
+    window.addEventListener('keydown', esc)
+    return () => {
+      window.removeEventListener('pointerdown', outside)
+      window.removeEventListener('keydown', esc)
+    }
+  }, [open])
+  return (
+    <div className="tag-menu" ref={box}>
+      <button
+        type="button"
+        className={`tower-laps tag-select ${className}`}
+        aria-label={`${label}: ${text(value)}`}
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        {text(value)}
+      </button>
+      {open && (
+        <ul className="tag-menu-list" role="menu" aria-label={label}>
+          {options.map((v) => (
+            <li key={v} role="none">
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={v === value}
+                onClick={() => {
+                  setOpen(false)
+                  if (v !== value) onPick(v)
+                }}
+              >
+                {text(v)}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export default function RoomPanel() {
   const o = useOnline()
   const r = useRace()
@@ -49,10 +126,9 @@ export default function RoomPanel() {
   if (!room) return null
   const isHost = room.hostId === o.myId
 
-  let footer: string | null = null
-  if (r.phase === 'waiting') footer = isHost ? '모두 모이면 출발을 눌러 주세요.' : '방장이 출발을 누르면 신호가 켜져요.'
-  else if (r.phase === 'countdown') footer = '초록불에 맞춰 ↑를 누르면 스타트 부스터가 나가요.'
-  const locked = r.phase !== 'racing'
+  const me = room.members.find((m) => m.id === o.myId)
+  // 방장을 뺀 모두가 ready를 눌러야 start 가능 (서버도 같은 규칙으로 막는다)
+  const allReady = room.members.every((m) => m.id === room.hostId || m.ready)
 
   return (
     <>
@@ -64,15 +140,44 @@ export default function RoomPanel() {
             <small>/{r.laps}</small>
           </span>
           바퀴
+          <LapTime />
         </p>
       )}
+      {isHost && r.phase === 'waiting' && <MapPicker current={room.map} />}
       <section className="grid-panel" aria-labelledby="room-title">
         <div className="grid-panel-head">
           <h2 id="room-title" className="grid-panel-title">
             {room.name}
           </h2>
-          <span className="grid-panel-count">
-            {room.laps}바퀴, {room.members.length}/{GRID_SLOTS}명
+        </div>
+        <div className="tag-row">
+          <span className={`tower-laps map-${room.map}`}>{MAPS[room.map]?.name}</span>
+          {isHost && r.phase === 'waiting' ? (
+            <>
+              <TagMenu
+                label="바퀴 수"
+                value={room.laps}
+                options={[1, 2, 3]}
+                text={(n) => `${n}바퀴`}
+                onPick={(laps) => setRoomSettings({ laps })}
+              />
+              <TagMenu
+                label="속도"
+                value={room.speed}
+                options={Object.keys(SPEED_LABEL) as SpeedClass[]}
+                text={(s) => SPEED_LABEL[s]}
+                onPick={(speed) => setRoomSettings({ speed })}
+                className={room.speed !== 'normal' ? 'is-fast' : ''}
+              />
+            </>
+          ) : (
+            <>
+              <span className="tower-laps">{room.laps}바퀴</span>
+              <span className={`tower-laps ${room.speed !== 'normal' ? 'is-fast' : ''}`}>{SPEED_LABEL[room.speed]}</span>
+            </>
+          )}
+          <span className="tower-laps">
+            {room.members.length}/{GRID_SLOTS}명
           </span>
         </div>
         {racing ? (
@@ -96,14 +201,15 @@ export default function RoomPanel() {
               <li key={m.id} className={m.id === o.myId ? 'is-me' : undefined}>
                 <span className="grid-pos">{m.slot + 1}</span>
                 <span className="grid-name">{m.name}</span>
-                {m.id === room.hostId && <span className="grid-tag">방장</span>}
+                {m.id === room.hostId ? (
+                  <span className="grid-tag">방장</span>
+                ) : (
+                  m.ready && <span className="grid-tag is-ready">준비</span>
+                )}
               </li>
             ))}
           </ol>
         )}
-        {locked && <p className="grid-hint">출발 전에는 좌우 조향만 할 수 있어요.</p>}
-        {footer && <p className="grid-hint">{footer}</p>}
-        {room.started && <p className="grid-hint">레이스가 끝나면 방을 나갈 수 있어요.</p>}
         <div className="btn-row">
           {!room.started && (
             <button className="btn btn-quiet" onClick={leaveRoom}>
@@ -111,8 +217,17 @@ export default function RoomPanel() {
             </button>
           )}
           {isHost && r.phase === 'waiting' && (
-            <button className="btn btn-primary" onClick={startRace}>
-              출발
+            <button className="btn btn-primary" onClick={startRace} disabled={!allReady}>
+              START
+            </button>
+          )}
+          {!isHost && r.phase === 'waiting' && (
+            <button
+              className={`btn ${me?.ready ? 'btn-quiet' : 'btn-primary'}`}
+              onClick={toggleReady}
+              aria-pressed={me?.ready ?? false}
+            >
+              {me?.ready ? 'READY 취소' : 'READY'}
             </button>
           )}
         </div>

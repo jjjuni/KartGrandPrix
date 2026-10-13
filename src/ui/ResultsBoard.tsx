@@ -14,8 +14,9 @@ function useSecondsLeft(resetAt: number | null) {
 }
 
 /**
- * 결승선을 통과한 사람에게만 화면 가운데 순위표. 다른 사람이 들어올 때마다 실시간으로 한 줄씩 늘어난다.
- * 아직 달리는 사람에게는 1등 도착 후 남은 시간만 위쪽에 알린다.
+ * 화면 가운데 순위표: 결승선을 통과한 사람에게 바로(다른 사람이 들어올 때마다 한 줄씩),
+ * 레이스가 끝나면(모두 도착 또는 1등 도착 30초 뒤) 모두에게 최종 결과로.
+ * 아직 달리는 사람에게는 1등 도착 후 남은 시간만 위쪽에 보인다.
  */
 export default function ResultsBoard() {
   const o = useOnline()
@@ -28,7 +29,7 @@ export default function ResultsBoard() {
     if (left === null) return null
     return (
       <p className="finish-alert" role="status">
-        1등이 들어왔어요. {left}초 안에 결승선을 통과하세요.
+        {left}초
       </p>
     )
   }
@@ -38,9 +39,12 @@ export default function ResultsBoard() {
 
   return (
     <section className="results" aria-labelledby="results-title">
-      <h2 id="results-title" className="results-title">
-        결과
-      </h2>
+      <div className="results-head">
+        <h2 id="results-title" className="results-title">
+          결과
+        </h2>
+        {left !== null && <span className="results-timer">{left}초</span>}
+      </div>
       <ol className="results-list">
         {o.results.map((x) => (
           <li key={x.id} className={x.id === o.myId ? 'is-me' : undefined}>
@@ -53,11 +57,10 @@ export default function ResultsBoard() {
           <li key={m.id} className="is-racing">
             <span className="results-rank" aria-hidden="true" />
             <span className="results-name">{m.name}</span>
-            <span className="results-time">주행 중</span>
+            <span className="results-time">{o.final ? 'RETIRE' : '주행 중'}</span>
           </li>
         ))}
       </ol>
-      {left !== null && <p className="results-foot">{left}초 뒤 모두 출발 그리드로 돌아가요.</p>}
     </section>
   )
 }

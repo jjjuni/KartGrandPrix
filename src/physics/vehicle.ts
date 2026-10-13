@@ -70,6 +70,8 @@ export const KART = {
   grassRolling: 0.06, // 구름저항 계수 (도로 0.015)
   /** 속도에 비례하는 저항 (N per m/s, 네 바퀴 합계) — 바퀴가 잔디·흙을 밀고 나가는 저항. 잔디 최고속도 약 50km/h */
   grassDrag: 95,
+  /** 빙판 위 접지력 배율 (극지 맵) — 주행 보조도 이만큼 약해진다 */
+  iceGrip: 1,
 
   // ---- 벽 충돌 ----
   /**
@@ -113,24 +115,28 @@ export const KART = {
   /** 드리프트 중 가속 시 뒷바퀴 표면이 지면보다 빠르게 도는 속도 (m/s) — 클수록 앞으로 미는 비중이 커짐 */
   wheelSpin: 1,
   /**
-   * 드리프트 보조 (운전자 모델) — 힘은 모두 타이어 물리로 계산하고, 보조는 앞바퀴를 '어디로 향할지'만 정한다.
-   * 실제 드리프트처럼 앞바퀴를 앞축의 진행 방향에 맞추고(역조향), 거기서 frontSlip만큼 안쪽으로 틀어
-   * 앞바퀴 접지력으로 경로를 휘게 한다. 드리프트 각이 목표보다 크면 덜 틀고, 작으면 더 튼다.
+   * 드리프트 보조 (게임 보조) — 앞바퀴는 언제나 방향키대로 두고(자동 역조향 없음),
+   * 드리프트 각은 차체 회전(요)을 직접 조절해 목표 각에 맞춘다: 얕으면 안쪽으로, 깊으면 바깥쪽으로.
    */
   driftAngle: 0.6, // 목표 드리프트 각 (rad, 약 34도) — 차체가 진행 방향보다 안쪽을 향하는 각도
   driftAngleTight: 0.2, // 같은 방향키: 목표 각 + (더 깊게)
   driftAngleWide: 0.4, // 반대 방향키: 목표 각 − (거의 펴서 넓게 — 뒷바퀴 힘이 주로 앞으로)
-  /** 게임 보조: 드리프트 각이 목표보다 얕으면 차체를 직접 돌린다 (rad/s² per rad) — 앞바퀴 힘만으로는 깊은 각을 못 만든다 */
-  driftYawAssist: 6,
-  driftFrontSlip: 0.08, // 앞바퀴 슬립각 기본값 (rad) — 앞·뒤 횡력의 요 모멘트가 균형을 이루는 값 근처
-  driftFrontSlipAdjust: 0.08, // 같은 방향키 +(더 휘게), 반대 방향키 −
-  driftAngleGain: 0.9, // 드리프트 각 오차 → 앞바퀴 각도 보정
-  driftAngleDamping: 0.3, // 드리프트 각 변화 속도(rad/s) → 보정 (출렁임 방지)
-  /** 앞바퀴 슬립각 한계 (rad) — 이보다 크게 틀면 앞바퀴도 미끄러져 경로가 안 휜다 (포화 슬립각 ≈ μs / cornering) */
-  driftFrontSlipMax: 0.13,
-  /** 드리프트가 아닌데 뒤가 미끄러질 때(탈출 직후 등) 앞바퀴를 진행 방향으로 맞추는 정도 (캐스터의 자기 정렬 효과) */
-  counterSteer: 0.8,
-  gaugeRate: 0.3, // 뒷바퀴가 4m/s 이상 옆으로 미끄러질 때 초당 게이지
+  driftYawAssist: 35, // 드리프트 각 오차 → 차체 회전 가속 (rad/s² per rad)
+  driftYawDamping: 8, // 드리프트 각 변화 속도 → 반대 회전 (1/s) — 출렁임 방지
+  /** 드리프트가 아닌데 뒤가 미끄러질 때(탈출 직후 등) 차체 회전을 줄이는 정도 (1/s) — 앞바퀴 대신 스핀을 막는다 */
+  slideYawDamping: 4,
+  driftFrontGrip: 0.15, // 드리프트 중 앞바퀴 접지력 배율
+
+  // ---- 주행 보조 (게임 보조 — 드리프트가 아닐 때, 바퀴가 땅에 있을 때) ----
+  /** 옆으로 미끄러지는 속도를 줄이는 빠르기 (1/s) — 고속에서 꺾어도 뒤가 털리지 않게 */
+  gripAssist: 8,
+  /** 차체 회전 속도를 앞바퀴 각도(자전거 모델)에 맞추는 빠르기 (1/s) — 꺾은 만큼 실제로 돈다 */
+  yawFollow: 8,
+  /** 보조로 낼 수 있는 최대 옆 가속도 (m/s², 약 2.5g) — 이보다 급하게는 못 꺾는다 */
+  maxLateralAccel: 25,
+  /** 드리프트를 끊은 뒤 보조가 0에서 최대까지 서서히 켜지는 시간 (s) — 그동안 움직이던 방향으로 조금 더 흘러간다 */
+  driftExitBlend: 0.8,
+  gaugeDistance: 110, // 뒷바퀴가 4m/s 이상 옆으로 미끄러지며 이만큼(m) 달리면 게이지가 가득
 
   // ---- 공중 자세 보조 (게임 보조 — 네 바퀴가 모두 떠 있을 때만) ----
   airYawAlign: 4, // 차체 방향을 진행 방향으로 돌리는 속도 (1/s) — 비스듬히 착지해 타이어가 튀는 것 방지
@@ -146,8 +152,73 @@ export const KART = {
   minDriftTime: 0.3,
   instantBoostTime: 0.6,
   instantBoostKick: 1.5,
+  /** 스타트 부스터 (초록불에 맞춰 ↑) — 드리프트 순간 부스터보다 길고 세게 */
+  startBoostTime: 1.1,
+  startBoostKick: 2.2,
   boostThrust: MASS * 9, // 무게중심에 작용하는 추진력 (N) — 약 0.9g
   boostMaxSpeed: 130 / 3.6,
+}
+
+/** 방 속도 등급 (방을 만들 때 고름) */
+export type SpeedClass = 'normal' | 'fast' | 'faster'
+
+// 등급별 배율: 최고속도(부스터 최고속도 포함) · 엔진 출력(고속 가속) · 저속 구동력(초반 가속)
+const SPEED_CLASSES: Record<SpeedClass, { speed: number; power: number; force: number }> = {
+  normal: { speed: 1, power: 1, force: 1 },
+  fast: { speed: 1.25, power: 1.45, force: 1.15 },
+  faster: { speed: 1.5, power: 2, force: 1.3 },
+}
+
+/** 차량 종류 (모양과 일부 성능이 다르다) */
+export type Vehicle = 'kart' | 'bike'
+
+// 차량별 배율: 바이크는 게이지가 빨리 차는 대신 Z 부스터가 짧고, 최고속도가 아주 조금 높다
+const VEHICLE_STATS: Record<Vehicle, { speed: number; gauge: number; boost: number }> = {
+  kart: { speed: 1, gauge: 1, boost: 1 },
+  bike: { speed: 1.03, gauge: 1.25, boost: 0.8 },
+}
+
+const BASE = {
+  maxSpeed: KART.maxSpeed,
+  boostMaxSpeed: KART.boostMaxSpeed,
+  enginePower: KART.enginePower,
+  engineForce: KART.engineForce,
+  gaugeDistance: KART.gaugeDistance,
+  boostDuration: KART.boostDuration,
+}
+let speedClass: SpeedClass = 'normal'
+let vehicle: Vehicle = 'kart'
+
+/** 방 속도 등급 × 차량 배율을 KART에 적용 (내 카트 하나에만 쓰이는 값) */
+function applyTuning() {
+  const k = SPEED_CLASSES[speedClass] ?? SPEED_CLASSES.normal
+  const v = VEHICLE_STATS[vehicle] ?? VEHICLE_STATS.kart
+  KART.maxSpeed = BASE.maxSpeed * k.speed * v.speed
+  KART.boostMaxSpeed = BASE.boostMaxSpeed * k.speed * v.speed
+  KART.enginePower = BASE.enginePower * k.power * v.speed // 높아진 최고속도까지 닿도록 출력도 같은 만큼
+  KART.engineForce = BASE.engineForce * k.force
+  KART.gaugeDistance = BASE.gaugeDistance / v.gauge
+  KART.boostDuration = BASE.boostDuration * v.boost
+}
+
+/** 방에 들어갈 때 그 방의 속도 등급으로 맞춘다 (대기실로 나오면 normal) */
+export function setSpeedClass(cls: SpeedClass) {
+  speedClass = cls
+  applyTuning()
+}
+
+/** 맵의 노면 특성: 코스 밖(잔디·모래·눈)의 접지력·저항, 빙판 접지력 */
+export function setSurfaceTuning(s: { offGrip: number; offDrag: number; offRolling: number; iceGrip: number }) {
+  KART.grassGrip = s.offGrip
+  KART.grassDrag = s.offDrag
+  KART.grassRolling = s.offRolling
+  KART.iceGrip = s.iceGrip
+}
+
+/** 내가 고른 차량의 성능으로 맞춘다 */
+export function setVehicleStats(v: Vehicle) {
+  vehicle = v
+  applyTuning()
 }
 
 export type Gear = 'P' | 'R' | 'D'
@@ -204,6 +275,20 @@ const tmp = {
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
 
+/**
+ * 이 속도(전진 m/s)에서 방향키를 끝까지 눌렀을 때의 앞바퀴 각도 (rad).
+ * 여유각은 고속으로 갈수록 줄여, 최고속도에서는 타이어 한계 각도만 남긴다 (살짝 꺾어도 뒤가 털리지 않게).
+ * 물리 조향과 화면 표시(바퀴 각도 · 바이크 기울기)가 같이 쓴다.
+ */
+export function steerLimit(vLong: number) {
+  const speedRatio = clamp(Math.abs(vLong) / KART.maxSpeed, 0, 1)
+  const wheelBase = KART.frontZ - KART.rearZ
+  const limit =
+    (KART.steerLimitScale * wheelBase * KART.muStatic * G) / Math.max(vLong * vLong, 1) +
+    KART.steerMargin * (1 - speedRatio)
+  return clamp(limit, KART.minSteer, KART.maxSteer)
+}
+
 export class KartPhysics {
   readonly body: Body
   readonly wheels: WheelState[]
@@ -225,6 +310,8 @@ export class KartPhysics {
     drift: false,
   }
   steer = 0
+  /** 화면에 보이는 앞바퀴 각도 (rad): 이 속도의 조향 한계 대비 비율 × 저속 최대 각 — 고속에서도 꺾는 게 잘 보이게 */
+  steerVisual = 0
 
   // ---- 게임 상태 ----
   drifting = false
@@ -236,11 +323,13 @@ export class KartPhysics {
   boostTime = 0
   boostKind: BoostKind = 'none'
   /** true로 두면 다음 스텝에 순간 부스터 (출발 신호에 맞춘 스타트 부스터 — Kart.tsx가 건다) */
-  queueInstantBoost = false
+  queueStartBoost = false
   gear: Gear = 'P'
   private prevForward = false
   private prevBoost = false
   private prevDriftAngle = 0
+  /** 마지막 드리프트가 끝난 뒤 지난 시간 (s) */
+  private sinceDrift = 99
 
   // ---- 관측값 (HUD·이펙트·테스트용) ----
   forwardSpeed = 0
@@ -334,6 +423,7 @@ export class KartPhysics {
     this.boostKind = 'none'
     this.boostWindow = 0
     this.steer = 0
+    this.steerVisual = 0
   }
 
   private endDrift(allowBoost: boolean) {
@@ -369,6 +459,7 @@ export class KartPhysics {
       this.boostWindow = 0
     } else if (this.drifting) {
       this.driftTime += dt
+      this.sinceDrift = 0
       this.handbrake = Math.max(0, this.handbrake - dt)
       if (!input.drift) this.endDrift(true)
       else if (vLongBody < KART.driftMinSpeed * 0.5) this.endDrift(false)
@@ -387,9 +478,9 @@ export class KartPhysics {
       tmp.dir.normalize()
       b.applyImpulse(tmp.dir.scale(KART.mass * kick, tmp.force))
     }
-    if (this.queueInstantBoost) {
-      this.queueInstantBoost = false
-      startBoost(KART.instantBoostTime, 'instant', KART.instantBoostKick)
+    if (this.queueStartBoost) {
+      this.queueStartBoost = false
+      startBoost(KART.startBoostTime, 'instant', KART.startBoostKick)
     }
     // 순간 부스터: 드리프트 탈출 직후 ↑ 재입력 (게이지 소모 없음)
     if (this.boostWindow > 0) {
@@ -411,12 +502,8 @@ export class KartPhysics {
     if (this.boostTime === 0) this.boostKind = 'none'
 
     // ---------------- 조향 ----------------
-    // 앞축이 실제로 움직이는 방향 (차체 기준 각도) = 앞바퀴를 '똑바로' 굴리려면 향해야 할 각도
     const yawRate = b.angularVelocity.dot(up)
-    const frontAxleDir = vLongBody > 1 ? Math.atan2(vLatBody + yawRate * KART.frontZ, vLongBody) : 0
     const speedRatio = clamp(Math.abs(vLongBody) / KART.maxSpeed, 0, 1)
-    let targetSteer: number
-    let steerRate = KART.steerRate
     const rearSliding = this.wheels[2].sliding || this.wheels[3].sliding
     if (this.drifting && vLongBody > 2) {
       const dir = this.driftDir
@@ -426,33 +513,35 @@ export class KartPhysics {
       this.prevDriftAngle = angle
       const targetAngle =
         KART.driftAngle + (toward > 0 ? KART.driftAngleTight : toward < 0 ? -KART.driftAngleWide : 0)
-      const frontSlip = clamp(
-        KART.driftFrontSlip +
-          KART.driftFrontSlipAdjust * toward -
-          KART.driftAngleGain * (angle - targetAngle) -
-          KART.driftAngleDamping * angleRate,
-        -KART.driftFrontSlipMax,
-        KART.driftFrontSlipMax,
-      )
-      targetSteer = frontAxleDir + dir * frontSlip
-      // 목표보다 얕을 때만 안쪽으로 요 회전을 더한다 (깊을 때는 위 앞바퀴 보정이 펴 준다)
-      const angleError = targetAngle - angle
-      if (angleError > 0) b.angularVelocity.vadd(up.scale(dir * KART.driftYawAssist * angleError * dt, tmp.v), b.angularVelocity)
-      steerRate *= 2.5
-    } else {
-      const wheelBase = KART.frontZ - KART.rearZ
-      // 여유각은 고속으로 갈수록 줄여, 최고속도에서는 타이어 한계 각도만 남긴다 (살짝 꺾어도 뒤가 털리지 않게)
-      const limitSteer =
-        (KART.steerLimitScale * wheelBase * KART.muStatic * G) / Math.max(vLongBody * vLongBody, 1) +
-        KART.steerMargin * (1 - speedRatio)
-      targetSteer = steerInput * clamp(limitSteer, KART.minSteer, KART.maxSteer)
-      steerRate *= 1 - 0.5 * speedRatio
-      // 탈출 직후처럼 뒤가 미끄러지는 동안은 앞바퀴가 진행 방향을 따라가 스핀을 막는다
-      if (rearSliding && vLongBody > 2) targetSteer += KART.counterSteer * clamp(frontAxleDir, -0.7, 0.7)
+      // 드리프트 각은 차체 회전으로 맞춘다 (얕으면 안쪽, 깊으면 바깥쪽 + 변화 속도 감쇠). 앞바퀴는 아래에서 방향키대로
+      const yawAccel = KART.driftYawAssist * (targetAngle - angle) - KART.driftYawDamping * angleRate
+      b.angularVelocity.vadd(up.scale(dir * yawAccel * dt, tmp.v), b.angularVelocity)
     }
-    targetSteer = clamp(targetSteer, -0.65, 0.65)
-    const ds = steerRate * dt
+    if (!this.drifting) this.sinceDrift += dt
+    // 드리프트를 끊은 직후에는 보조를 약하게 시작해 서서히 최대로 (끊는 순간 진행 방향이 확 바뀌지 않게)
+    const exitBlend = clamp(this.sinceDrift / KART.driftExitBlend, 0, 1)
+    if (!this.drifting && rearSliding && vLongBody > 2) {
+      // 탈출 직후처럼 뒤가 미끄러지는 동안은 차체 회전을 줄여 스핀을 막는다 (앞바퀴는 건드리지 않음)
+      b.angularVelocity.vadd(up.scale(-yawRate * Math.min(1, KART.slideYawDamping * exitBlend * dt), tmp.v), b.angularVelocity)
+    }
+    // 주행 보조: 드리프트가 아닐 때 옆 미끄러짐을 줄이고, 차체 회전을 앞바퀴 각도에 맞춘다 (옆 가속도 상한 안에서)
+    // 빙판 위에서는 보조도 약하게 — 아니면 미끄러운 노면이 느껴지지 않는다
+    const onIce = this.wheels.some((w) => w.contact && w.surface === 'ice')
+    const assist = exitBlend * (onIce ? KART.iceGrip ** 2 : 1)
+    if (!this.drifting && grounded && Math.abs(vLongBody) > 2) {
+      const kLat = Math.min(1, KART.gripAssist * assist * dt)
+      vel.x -= left.x * vLatBody * kLat
+      vel.z -= left.z * vLatBody * kLat
+      const maxYaw = KART.maxLateralAccel / Math.abs(vLongBody)
+      const yawTarget = clamp((vLongBody * Math.tan(this.steer)) / (KART.frontZ - KART.rearZ), -maxYaw, maxYaw)
+      b.angularVelocity.vadd(up.scale((yawTarget - yawRate) * Math.min(1, KART.yawFollow * assist * dt), tmp.v), b.angularVelocity)
+    }
+    // 앞바퀴는 언제나 방향키대로 (드리프트 중에도 자동 역조향 없음)
+    const limit = steerLimit(vLongBody)
+    const targetSteer = clamp(steerInput * limit, -0.65, 0.65)
+    const ds = KART.steerRate * (1 - 0.5 * speedRatio) * dt
     this.steer += clamp(targetSteer - this.steer, -ds, ds)
+    this.steerVisual = clamp(this.steer / limit, -1, 1) * KART.maxSteer
 
     // ---------------- 기어: P(주차) / R / D ----------------
     // 입력 없이 거의 멈추면 P — 네 바퀴를 붙잡아 경사에서도 미끄러져 내려가지 않는다
@@ -551,7 +640,9 @@ export class KartPhysics {
       const isRear = !w.front
       const tireLoad = Math.min(w.load, (KART.maxTireLoadFactor * KART.mass * 9.81) / 4)
       const grass = w.surface === 'grass'
-      const grip = grass ? KART.grassGrip : 1
+      // 드리프트 중 앞바퀴: 방향키대로 꺾여 있어도 노면을 긁어 급감속하지 않게 접지력을 줄인다 (역조향 대신)
+      const surfaceGrip = grass ? KART.grassGrip : w.surface === 'ice' ? KART.iceGrip : 1
+      const grip = surfaceGrip * (this.drifting && w.front ? KART.driftFrontGrip : 1)
       const muK = KART.muKinetic * grip * tireLoad
       const muS = KART.muStatic * grip * tireLoad
 
@@ -614,9 +705,10 @@ export class KartPhysics {
     }
     this.rearSlide = rearSlide
 
-    // ---------------- 게이지: 뒷바퀴가 옆으로 미끄러지는 만큼 ----------------
+    // ---------------- 게이지: 뒷바퀴가 미끄러지며 달린 거리만큼 ----------------
     if (this.drifting && contacts >= 2) {
-      this.gauge = Math.min(1, this.gauge + KART.gaugeRate * clamp(rearSlide / 4, 0, 1) * dt)
+      const moved = Math.hypot(b.velocity.x, b.velocity.z) * dt
+      this.gauge = Math.min(1, this.gauge + (moved / KART.gaugeDistance) * clamp(rearSlide / 4, 0, 1))
     }
 
     // ---------------- 벽 충돌: 충격량에 비례한 마찰 + 긁힘 감속 ----------------

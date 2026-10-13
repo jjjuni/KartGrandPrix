@@ -24,8 +24,6 @@ export default function EntryScreen() {
       <h1 id="entry-title" className="wordmark">
         Kart Grand Prix
       </h1>
-      <p className="pitwall-lead">레이스에서 쓸 닉네임을 정해 주세요. 같은 방 사람들의 출발 명단에 이 이름이 보여요.</p>
-
       <form className="field-stack" onSubmit={submit}>
         <label className="field">
           <span className="field-label">닉네임</span>
@@ -34,21 +32,21 @@ export default function EntryScreen() {
             value={name}
             maxLength={MAX_NAME}
             onChange={(e) => setName(e.target.value)}
-            placeholder="최대 12자"
             autoComplete="nickname"
+            placeholder="닉네임을 입력해주세요"
           />
         </label>
         <button className="btn btn-primary" type="submit" disabled={!trimmed || waiting}>
-          {waiting ? '서버에 연결하는 중…' : '대기실로 입장'}
+          {waiting ? '연결 중…' : '입장'}
         </button>
         {o.status === 'closed' && (
           <p className="notice" role="status">
-            서버에 연결할 수 없어요. 3초마다 다시 시도하고 있어요.
+            서버에 연결할 수 없어요
           </p>
         )}
         {o.error?.code === 'name' && (
           <p className="notice" role="alert">
-            닉네임은 1~12자로 입력해 주세요.
+            닉네임은 1~12자
           </p>
         )}
       </form>

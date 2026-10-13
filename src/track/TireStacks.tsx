@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { Color, Object3D, type InstancedMesh } from 'three'
 import { useWorld } from '../physics/PhysicsWorld'
 import { GROUP, materials } from '../physics/world'
-import { APEXES } from './Cones'
+import { getApexes } from './Cones'
 import { WALL_OFFSET, centerPoints, frames, offsetPoints } from './trackData'
 
 const SPAN = 14 // 에이펙스 앞뒤로 쌓는 범위 (m)
@@ -26,7 +26,7 @@ export default function TireStacks() {
     const list: { x: number; y: number; z: number; rot: number; color: Color }[] = []
     // 바깥 방벽 앞 곡선을 STEP 간격으로 고르게 나눈 점 (코너 바깥쪽이 왼쪽/오른쪽인 경우 각각)
     const rows = { 1: offsetPoints(OFFSET, STEP), [-1]: offsetPoints(-OFFSET, STEP) }
-    APEXES.forEach(({ index: apex, side }) => {
+    getApexes().forEach(({ index: apex, side }) => {
       const out = -side as 1 | -1 // 코너 바깥쪽
       const a = centerPoints[apex].clone().addScaledVector(frames[apex].left, OFFSET * out)
       const near = rows[out].filter((seg) => seg.position.distanceTo(a) < SPAN)
@@ -53,7 +53,7 @@ export default function TireStacks() {
   const bodies = useMemo(() => {
     const rows = { 1: offsetPoints(OFFSET, CHUNK), [-1]: offsetPoints(-OFFSET, CHUNK) }
     const shape = new Box(new Vec3(TIRE_R, COLLIDER_HEIGHT / 2, CHUNK / 2 + 0.1))
-    return APEXES.map(({ index: apex, side }) => {
+    return getApexes().map(({ index: apex, side }) => {
       const out = -side as 1 | -1
       const a = centerPoints[apex].clone().addScaledVector(frames[apex].left, OFFSET * out)
       const body = new Body({ mass: 0, type: Body.STATIC, material: materials.wall, collisionFilterGroup: GROUP.STATIC })

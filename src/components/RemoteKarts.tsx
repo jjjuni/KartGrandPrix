@@ -3,10 +3,11 @@ import { useFrame } from '@react-three/fiber'
 import { Body, Box, Vec3 } from 'cannon-es'
 import { createRef, useEffect, useMemo, useRef, useState } from 'react'
 import { Quaternion, Vector3, type Group } from 'three'
-import { online, peers, sendHit, subscribe } from '../net/online'
+import { online, peers, sendHit, subscribe, type Vehicle } from '../net/online'
 import { useWorld } from '../physics/PhysicsWorld'
 import { KART } from '../physics/vehicle'
 import { GROUP, materials } from '../physics/world'
+import BikeModel from './BikeModel'
 import KartModel from './KartModel'
 import SkidMarks, { type MarkWheel } from './SkidMarks'
 import Wheel from './Wheel'
@@ -26,7 +27,9 @@ const HIT_COOLDOWN = 400 // ms — 붙어 있는 동안 매 스텝 보내지 않
  * 다른 사람의 카트 하나. 받은 위치를 따라 움직이는 키네마틱 충돌 상자를 내 물리 세계에 둔다 —
  * 내 카트는 부딪히면 튕기고, 상자는 밀리지 않는다 (상대 화면에서는 상대가 내 상자에 부딪혀 튕김)
  */
-function RemoteKart({ id, name }: { id: number; name: string }) {
+function RemoteKart({ id, name, vehicle }: { id: number; name: string; vehicle: Vehicle }) {
+  const isBike = useRef(false)
+  isBike.current = vehicle === 'bike'
   const ref = useRef<Group>(null)
   const steer = useRef(0)
   const wheels = useMemo(() => [0, 1, 2, 3].map(() => createRef<Group>()), [])
@@ -54,9 +57,11 @@ function RemoteKart({ id, name }: { id: number; name: string }) {
       if (!s || !g) return null
       const up = _up.set(0, 1, 0).applyQuaternion(g.quaternion)
       marks.forEach((m, i) => {
-        m.sliding = ((s.skid >> i) & 1) === 1
+        // 뒷바퀴(2·3)만. 바이크는 뒷바퀴 하나 → 두 비트 중 하나라도 켜지면 가운데 한 줄
+        m.sliding = i < 2 ? false : isBike.current ? i === 2 && (s.skid & 0b1100) !== 0 : ((s.skid >> i) & 1) === 1
         if (!m.sliding) return
-        const [x, , z] = wheelPos[i]
+        const [wx, , z] = wheelPos[i]
+        const x = isBike.current ? 0 : wx
         m.point.set(x, -KART.wheelRadius, z).applyMatrix4(g.matrixWorld)
         m.normal.copy(up)
       })
@@ -131,7 +136,11 @@ function RemoteKart({ id, name }: { id: number; name: string }) {
       <group ref={ref}>
         {/* Kart.tsx의 MODEL_OFFSET_Y와 같은 값 */}
         <group position={[0, 0.09, 0]}>
-          <KartModel steer={steer} color={peerColor(id)} number={id % 100} />
+          {vehicle === 'bike' ? (
+            <BikeModel steer={steer} spin={spin} color={peerColor(id)} number={id % 100} />
+          ) : (
+            <KartModel steer={steer} color={peerColor(id)} number={id % 100} />
+          )}
         </group>
         {/* 머리 위 이름표 (화면을 향하는 HTML 글자 — 한글 그대로) */}
         <Html position={[0, 1.55, -0.35]} center zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
@@ -140,7 +149,7 @@ function RemoteKart({ id, name }: { id: number; name: string }) {
           </span>
         </Html>
         {wheelPos.map((p, i) => (
-          <group key={i} position={p}>
+          <group key={i} position={p} visible={vehicle === 'kart'}>
             <Wheel ref={wheels[i]} radius={KART.wheelRadius} width={0.25} left={i % 2 === 1} />
           </group>
         ))}
@@ -151,20 +160,26 @@ function RemoteKart({ id, name }: { id: number; name: string }) {
 
 /** 같은 방에 접속한 다른 사람들의 카트 */
 export default function RemoteKarts() {
-  const [list, setList] = useState<{ id: number; name: string }[]>([])
+  const [list, setList] = useState<{ id: number; name: string; vehicle: Vehicle }[]>([])
   useEffect(() => {
     // 3D 장면이 로딩되는 동안 이미 들어와 있던 사람도 보이도록, 구독할 때 한 번 현재 목록을 읽는다
     const sync = () => {
-      const names = new Map(online.room?.members.map((m) => [m.id, m.name]))
-      setList([...peers.keys()].map((id) => ({ id, name: names.get(id) ?? '' })))
+      const members = new Map(online.room?.members.map((m) => [m.id, m]))
+      setList(
+        [...peers.keys()].map((id) => ({
+          id,
+          name: members.get(id)?.name ?? '',
+          vehicle: members.get(id)?.vehicle ?? 'kart',
+        })),
+      )
     }
     sync()
     return subscribe(sync)
   }, [])
   return (
     <>
-      {list.map(({ id, name }) => (
-        <RemoteKart key={id} id={id} name={name} />
+      {list.map(({ id, name, vehicle }) => (
+        <RemoteKart key={id} id={id} name={name} vehicle={vehicle} />
       ))}
     </>
   )

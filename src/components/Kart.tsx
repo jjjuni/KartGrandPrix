@@ -12,12 +12,14 @@ import {
 } from 'three'
 import { kartState } from '../game/kartState'
 import { useControls } from '../hooks/useControls'
-import { canDrive, tryStartBoost, updateLap } from '../game/race'
+import { canDrive, pressForward, takeStartBoost, updateLap } from '../game/race'
 import { onHit, onSpawn, sendFinish } from '../net/online'
 import { useWorld } from '../physics/PhysicsWorld'
 import { KART, KartPhysics } from '../physics/vehicle'
 import { createSurfaceTracker } from '../track/surface'
 import { WALL_OFFSET, centerPoints, gridPose, nearestSample, poseAt } from '../track/trackData'
+import { useOnline } from '../ui/hooks'
+import BikeModel from './BikeModel'
 import KartModel from './KartModel'
 import SkidMarks, { isSkidding, type MarkWheel } from './SkidMarks'
 import Wheel from './Wheel'
@@ -50,6 +52,11 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
   const controls = useControls()
   const world = useWorld()
   const kartRef = useRef<KartPhysics | null>(null)
+  // 고른 차량 (모양만 다르다). 바이크는 뒷바퀴가 하나라 불꽃·타이어 자국을 가운데 한 줄로
+  const { vehicle } = useOnline()
+  const isBike = useRef(false)
+  isBike.current = vehicle === 'bike'
+  const spin = useRef(0) // BikeModel 바퀴 회전용
 
   useEffect(() => {
     const kart = new KartPhysics(world, position, yaw, createSurfaceTracker())
@@ -63,6 +70,7 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
     onSpawn((slot) => {
       const pose = gridPose(slot)
       kart.reset(pose.position, pose.yaw)
+      kart.gauge = 0 // 새 레이스 · 방 입장 · 대기실: 게이지도 비운다 (R 복귀는 reset만 써서 게이지 유지)
     })
     return () => {
       onHit(null)
@@ -76,7 +84,10 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
 
   const chassisRef = useRef<Group>(null)
   const wheelRefs = [useRef<Group>(null), useRef<Group>(null), useRef<Group>(null), useRef<Group>(null)]
-  const sparks = [useRef<Mesh<BufferGeometry, MeshBasicMaterial>>(null), useRef<Mesh<BufferGeometry, MeshBasicMaterial>>(null)]
+  const sparks = [
+    useRef<Mesh<BufferGeometry, MeshBasicMaterial>>(null),
+    useRef<Mesh<BufferGeometry, MeshBasicMaterial>>(null),
+  ]
   const flame = useRef<Group>(null)
   const steer = useRef(0) // KartModel의 핸들·운전자 기울기용
 
@@ -96,6 +107,14 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
       m.normal.set(w.hitNormal.x, w.hitNormal.y, w.hitNormal.z)
       m.slip = w.slipSpeed
     })
+    // 타이어 자국은 뒷바퀴에서만
+    const [f0, f1, r0, r1] = markWheels.current
+    f0.sliding = f1.sliding = false
+    if (isBike.current) {
+      r0.sliding ||= r1.sliding
+      r0.point.lerp(r1.point, 0.5)
+      r1.sliding = false
+    }
     return markWheels.current
   }).current
   const tmp = useRef({
@@ -127,7 +146,8 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
     input.drift = c.drift
     // 스타트 부스터: 초록불에 맞춰 ↑를 새로 누르면 (판정은 race.ts)
     const gs = game.current
-    if (input.forward && !gs.prevForward && tryStartBoost(performance.now())) kart.queueInstantBoost = true
+    if (input.forward && !gs.prevForward) pressForward(performance.now())
+    if (takeStartBoost()) kart.queueStartBoost = true
     gs.prevForward = input.forward
     // 출발 신호 전(대기실 · 대기 · 카운트다운)에는 좌우 조향만
     if (!canDrive()) {
@@ -145,9 +165,15 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
     // 바퀴 세기 — 마지막 바퀴를 마친 순간 서버에 도착을 알린다 (기록은 서버가 잰다)
     if (updateLap(nearest.index, centerPoints.length)) sendFinish()
     g.offTrackTime = nearest.distance > WALL_OFFSET + 1.5 ? g.offTrackTime + delta : 0
-    const resetPressed = c.reset && !g.prevReset
+    // R은 주행 중에만 (대기 · 카운트다운 · 완주 후에는 막는다)
+    const resetPressed = c.reset && !g.prevReset && canDrive()
     g.prevReset = c.reset
-    if (resetPressed || g.flippedTime > FLIP_RESET_TIME || g.offTrackTime > OFF_TRACK_RESET_TIME || b.position.y < -20) {
+    if (
+      resetPressed ||
+      g.flippedTime > FLIP_RESET_TIME ||
+      g.offTrackTime > OFF_TRACK_RESET_TIME ||
+      b.position.y < -20
+    ) {
       const pose = poseAt(nearest.index)
       kart.reset(pose.position, pose.yaw)
       g.flippedTime = 0
@@ -173,15 +199,16 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
     chassis.quaternion.set(q.x, q.y, q.z, q.w)
     t.pos.copy(chassis.position)
     t.fwd.set(0, 0, 1).applyQuaternion(chassis.quaternion)
-    steer.current = kart.steer
+    steer.current = kart.steerVisual // 핸들·운전자·바이크: 보이는 각도 (고속에서도 크게)
 
     // 바퀴: 서스펜션 길이만큼 아래로, 조향(Y) 후 굴러가는 회전(X)
     kart.wheels.forEach((w, i) => {
       const ref = wheelRefs[i].current
       if (!ref) return
       ref.position.set(w.local.x, w.local.y - w.springLength, w.local.z)
-      ref.rotation.set(w.spin % (Math.PI * 2), w.steer, 0, 'YXZ')
+      ref.rotation.set(w.spin % (Math.PI * 2), w.front ? kart.steerVisual : 0, 0, 'YXZ')
     })
+    spin.current = kart.wheels[2].spin
 
     // HUD·조명이 읽는 상태
     const s = kartState
@@ -197,7 +224,7 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
     s.boostKind = kart.boostKind
     s.boostDuration = kart.boostKind === 'instant' ? KART.instantBoostTime : KART.boostDuration
     s.gear = kart.gear
-    s.steer = kart.steer
+    s.steer = kart.steerVisual
     // 미끄러지는 바퀴 (비트 0~3 = 바퀴 0~3) — 다른 사람 화면에 타이어 자국을 그리는 데 쓴다
     s.skid = kart.wheels.reduce((bits, w, i) => (isSkidding(w) ? bits | (1 << i) : bits), 0)
     s.offRoad = kart.offRoadWheels >= 2
@@ -210,10 +237,14 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
       const m = ref.current
       const w = kart.wheels[2 + k]
       if (!m) return
-      const on = kart.drifting && w.contact && w.slipSpeed > 2
+      const on = kart.drifting && w.contact && w.slipSpeed > 2 && !(isBike.current && k === 1)
       m.visible = on
       if (on) {
-        m.position.set(w.local.x, w.local.y - w.springLength - KART.wheelRadius + 0.08, w.local.z - 0.15)
+        m.position.set(
+          isBike.current ? 0 : w.local.x,
+          w.local.y - w.springLength - KART.wheelRadius + 0.08,
+          w.local.z - 0.15,
+        )
         m.scale.setScalar(0.6 + Math.random() * 0.8)
         m.material.color.setHex(sparkColor)
       }
@@ -246,12 +277,18 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
     <>
       <group ref={chassisRef}>
         <group position={[0, MODEL_OFFSET_Y, 0]}>
-          <KartModel steer={steer} />
+          {vehicle === 'bike' ? <BikeModel steer={steer} spin={spin} /> : <KartModel steer={steer} />}
           {/* 부스터 화염 (배기구 뒤로) */}
           <group ref={flame} position={[0.22, 0.02, -1.22]} visible={false}>
             <mesh position={[0, 0, -0.3]} rotation={[-Math.PI / 2, 0, 0]}>
               <coneGeometry args={[0.1, 0.6, 10]} />
-              <meshBasicMaterial color="#4fc3f7" toneMapped={false} transparent opacity={0.85} blending={AdditiveBlending} />
+              <meshBasicMaterial
+                color="#4fc3f7"
+                toneMapped={false}
+                transparent
+                opacity={0.85}
+                blending={AdditiveBlending}
+              />
             </mesh>
             <mesh position={[0, 0, -0.18]} rotation={[-Math.PI / 2, 0, 0]}>
               <coneGeometry args={[0.06, 0.35, 10]} />
@@ -263,12 +300,20 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
         {sparks.map((ref, i) => (
           <mesh key={i} ref={ref} visible={false}>
             <sphereGeometry args={[0.13, 8, 6]} />
-            <meshBasicMaterial color="#ffa726" toneMapped={false} transparent opacity={0.9} blending={AdditiveBlending} />
+            <meshBasicMaterial
+              color="#ffa726"
+              toneMapped={false}
+              transparent
+              opacity={0.9}
+              blending={AdditiveBlending}
+            />
           </mesh>
         ))}
         {wheelRefs.map((ref, i) => (
           // physics/vehicle.ts: 0·2번이 +X 쪽, 1·3번이 -X 쪽 바퀴 → 림이 바깥을 향하도록
-          <Wheel key={i} ref={ref} radius={KART.wheelRadius} width={WHEEL_WIDTH} left={i % 2 === 1} />
+          <group key={i} visible={vehicle === 'kart'}>
+            <Wheel ref={ref} radius={KART.wheelRadius} width={WHEEL_WIDTH} left={i % 2 === 1} />
+          </group>
         ))}
       </group>
       {/* 타이어 자국 (월드 좌표) */}

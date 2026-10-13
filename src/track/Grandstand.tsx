@@ -2,7 +2,7 @@ import { useFrame } from '@react-three/fiber'
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import { Color, Object3D, type InstancedMesh } from 'three'
 import { makeCanvasTexture, seededRandom } from '../utils/canvasTexture'
-import { WALL_OFFSET, centerPoints, frames, indexAtS } from './trackData'
+import { WALL_OFFSET, centerPoints, frames, indexAtS, trackVersion } from './trackData'
 
 /**
  * 출발 직선 바깥쪽 관중석. 로컬 좌표: +x = 트랙에서 멀어지는 방향(진행 방향 왼쪽), +z = 진행 방향
@@ -14,14 +14,21 @@ const TIER_RISE = 0.55
 const DEPTH = 1 + TIERS * TIER_DEPTH + 0.6
 const FRONT = WALL_OFFSET + 2.8 // 중심선에서 관중석 앞면까지
 
-const anchorIndex = indexAtS(14)
-const anchor = centerPoints[anchorIndex]
-const { tangent, left } = frames[anchorIndex]
-const origin = anchor.clone().addScaledVector(left, FRONT)
-const yaw = Math.atan2(tangent.x, tangent.z)
+/** 관중석 위치: 출발선 14m 앞, 진행 방향 왼쪽 (맵이 바뀌면 다시 계산) */
+function computeFrame() {
+  const i = indexAtS(14)
+  const { tangent, left } = frames[i]
+  return { tangent, left, origin: centerPoints[i].clone().addScaledVector(left, FRONT), yaw: Math.atan2(tangent.x, tangent.z) }
+}
+let frameCache: { version: number; frame: ReturnType<typeof computeFrame> } | null = null
+function grandstandFrame() {
+  if (!frameCache || frameCache.version !== trackVersion) frameCache = { version: trackVersion, frame: computeFrame() }
+  return frameCache.frame
+}
 
 /** 관중석이 차지하는 영역인지 (나무 배치에서 제외용) */
 export function isInGrandstand(x: number, z: number) {
+  const { origin, left, tangent } = grandstandFrame()
   const dx = x - origin.x
   const dz = z - origin.z
   const lx = dx * left.x + dz * left.z
@@ -103,6 +110,7 @@ function Crowd() {
 }
 
 export default function Grandstand() {
+  const { origin, yaw } = grandstandFrame()
   const banner = useMemo(
     () =>
       makeCanvasTexture(2048, 48, (ctx, w, h) => {

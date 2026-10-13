@@ -2,13 +2,14 @@ import { useEffect, useMemo } from 'react'
 import { BufferGeometry, Float32BufferAttribute } from 'three'
 import { useWorld } from '../physics/PhysicsWorld'
 import { createGroundBody } from '../physics/trackBodies'
-import { gridX, gridZ, terrainHeights } from '../track/terrain'
+import { getTerrain, gridX, gridZ } from '../track/terrain'
+import { currentMap } from '../track/trackData'
 import { makeCanvasTexture, seededRandom } from '../utils/canvasTexture'
 
 const STRIPE = 8 // 잔디 줄무늬 폭 (m)
 
 function makeTerrainGeometry() {
-  const n = terrainHeights.length
+  const { heights: terrainHeights, n } = getTerrain()
   const positions: number[] = []
   const uvs: number[] = []
   const indices: number[] = []
@@ -54,11 +55,43 @@ export default function Ground() {
         256,
         256,
         (ctx, w, h) => {
-          ctx.fillStyle = '#5b9a4a'
+          const { style, a, b } = currentMap.theme.ground
+          ctx.fillStyle = a
           ctx.fillRect(0, 0, w, h / 2)
-          ctx.fillStyle = '#4f8c40'
+          ctx.fillStyle = b
           ctx.fillRect(0, h / 2, w, h / 2)
           const rand = seededRandom(3)
+          if (style === 'sand') {
+            // 모래 물결 무늬 + 고운 알갱이
+            ctx.fillStyle = a
+            ctx.fillRect(0, 0, w, h)
+            for (let y = 0; y < h; y += 9) {
+              ctx.strokeStyle = 'rgba(150,105,55,0.28)'
+              ctx.lineWidth = 2
+              ctx.beginPath()
+              for (let x = 0; x <= w; x += 8) ctx.lineTo(x, y + Math.sin(x * 0.08 + y) * 2.5)
+              ctx.stroke()
+            }
+            for (let i = 0; i < 4000; i++) {
+              ctx.fillStyle = rand() > 0.5 ? 'rgba(255,240,205,0.35)' : 'rgba(160,110,60,0.3)'
+              ctx.fillRect(rand() * w, rand() * h, 1, 1)
+            }
+            return
+          }
+          if (style === 'snow') {
+            // 눈: 푸른 그늘 얼룩 + 반짝이는 알갱이
+            for (let i = 0; i < 60; i++) {
+              ctx.fillStyle = 'rgba(170,195,225,0.12)'
+              ctx.beginPath()
+              ctx.ellipse(rand() * w, rand() * h, 6 + rand() * 18, 3 + rand() * 8, rand() * Math.PI, 0, Math.PI * 2)
+              ctx.fill()
+            }
+            for (let i = 0; i < 900; i++) {
+              ctx.fillStyle = rand() > 0.3 ? 'rgba(255,255,255,0.9)' : 'rgba(180,215,255,0.8)'
+              ctx.fillRect(rand() * w, rand() * h, 1, 1)
+            }
+            return
+          }
           // 풀잎: 짧은 사선 획
           for (let i = 0; i < 5000; i++) {
             const r = rand()

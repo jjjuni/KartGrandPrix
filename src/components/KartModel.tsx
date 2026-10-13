@@ -16,7 +16,7 @@ type KartModelProps = {
  * 옆에서 본 단면(z, y)을 그려 X축 방향으로 width만큼 밀어낸 형상 (모서리는 bevel로 둥글게).
  * draw는 Shape 좌표의 x = 모델 z(앞), y = 모델 y(위)로 그린다. 결과는 x 방향 가운데 정렬.
  */
-function sideProfile(draw: (s: Shape) => void, width: number, bevel: number) {
+export function sideProfile(draw: (s: Shape) => void, width: number, bevel: number) {
   const shape = new Shape()
   draw(shape)
   const g = new ExtrudeGeometry(shape, {
@@ -44,6 +44,24 @@ function airfoil(chord: number, thickness: number) {
   }
 }
 
+/** 흰 원 안의 레이스 번호 (차체 옆면 데칼) — 바이크도 쓴다 */
+export function numberTexture(number: number) {
+  return makeCanvasTexture(128, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#fff'
+    ctx.beginPath()
+    ctx.arc(w / 2, h / 2, w / 2 - 4, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.lineWidth = 8
+    ctx.strokeStyle = '#111'
+    ctx.stroke()
+    ctx.fillStyle = '#111'
+    ctx.font = 'bold 84px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(String(number), w / 2, h / 2 + 6)
+  })
+}
+
 /**
  * 카트의 시각 모델. 물리 body(차체 박스)와 분리되어 있어서
  * 나중에 GLB 모델로 교체할 때 이 컴포넌트만 바꾸면 된다.
@@ -53,24 +71,7 @@ export default function KartModel({ steer, color = '#d62f2f', accent = '#f5f5f5'
   const wheelRef = useRef<Group>(null)
   const upperBodyRef = useRef<Group>(null)
 
-  const numberTex = useMemo(
-    () =>
-      makeCanvasTexture(128, 128, (ctx, w, h) => {
-        ctx.fillStyle = '#fff'
-        ctx.beginPath()
-        ctx.arc(w / 2, h / 2, w / 2 - 4, 0, Math.PI * 2)
-        ctx.fill()
-        ctx.lineWidth = 8
-        ctx.strokeStyle = '#111'
-        ctx.stroke()
-        ctx.fillStyle = '#111'
-        ctx.font = 'bold 84px system-ui, sans-serif'
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(String(number), w / 2, h / 2 + 6)
-      }),
-    [number],
-  )
+  const numberTex = useMemo(() => numberTexture(number), [number])
 
   const geo = useMemo(() => {
     // 노즈콘: 회전체를 앞으로 눕히고 위아래로 납작하게 (끝이 둥근 탄환형)
@@ -145,7 +146,9 @@ export default function KartModel({ steer, color = '#d62f2f', accent = '#f5f5f5'
     if (upperBodyRef.current) upperBodyRef.current.rotation.z = -steer.current * 0.25
   })
 
-  const body = <meshPhysicalMaterial color={color} metalness={0.4} roughness={0.25} clearcoat={1} clearcoatRoughness={0.15} />
+  const body = (
+    <meshPhysicalMaterial color={color} metalness={0.4} roughness={0.25} clearcoat={1} clearcoatRoughness={0.15} />
+  )
   const trim = <meshStandardMaterial color={accent} metalness={0.2} roughness={0.35} />
   const carbon = <meshStandardMaterial color="#17191c" metalness={0.5} roughness={0.45} />
   const dark = <meshStandardMaterial color="#1c1c1c" roughness={0.8} />

@@ -12,6 +12,18 @@
   --ui-font: system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
 }
 
+/* 화면 글자는 드래그로 선택되지 않게 (입력 칸은 예외), 포커스 테두리도 없앰 */
+* {
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+}
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 html,
 body,
 #root {
@@ -361,11 +373,6 @@ kbd.wide {
   transform-origin: left bottom;
 }
 
-.pitwall-lead {
-  margin: 0;
-  max-width: 32ch;
-  color: var(--ink-dim);
-}
 
 .pitwall-head {
   display: flex;
@@ -444,12 +451,6 @@ kbd.wide {
   font: 700 15px var(--ui-font);
   cursor: pointer;
 }
-.btn:focus-visible,
-.tower-main:focus-visible,
-.toggle input:focus-visible {
-  outline: 2px solid var(--amber);
-  outline-offset: 2px;
-}
 .btn:disabled {
   cursor: default;
   opacity: 0.45;
@@ -527,8 +528,9 @@ kbd.wide {
 }
 .tower-name {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   min-width: 0;
   font-weight: 600;
   overflow: hidden;
@@ -591,10 +593,6 @@ kbd.wide {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.grid-panel-count {
-  font: 600 16px var(--gauge-font);
-  color: var(--ink-dim);
-}
 .grid-list {
   margin: 0;
   padding: 0;
@@ -627,11 +625,6 @@ kbd.wide {
   background: rgba(255, 255, 255, 0.1);
   color: var(--ink-dim);
   font-size: 12px;
-}
-.grid-hint {
-  margin: 0;
-  color: var(--ink-dim);
-  font-size: 13px;
 }
 .grid-panel .btn {
   padding: 8px 14px;
@@ -714,27 +707,27 @@ kbd.wide {
   font-size: 12px;
   font-weight: 500;
 }
-.laps-pick {
+.seg-pick {
   display: flex;
   gap: 8px;
   margin: 0;
   padding: 0;
   border: 0;
 }
-.laps-pick legend {
+.seg-pick legend {
   margin-bottom: 6px;
   padding: 0;
 }
-.laps-pick label {
+.seg-pick label {
   flex: 1;
   cursor: pointer;
 }
-.laps-pick input {
+.seg-pick input {
   position: absolute;
   opacity: 0;
   pointer-events: none;
 }
-.laps-pick span {
+.seg-pick span {
   display: block;
   padding: 9px 0;
   border: 1px solid var(--pit-line);
@@ -742,23 +735,21 @@ kbd.wide {
   text-align: center;
   font-weight: 600;
 }
-.laps-pick label.is-on span {
+.seg-pick label.is-on span {
   border-color: var(--curb-red);
   background: rgba(211, 47, 47, 0.22);
-}
-.laps-pick input:focus-visible + span {
-  outline: 2px solid var(--amber);
-  outline-offset: 2px;
 }
 
 /* 주행 중 바퀴 표시: 미니맵 바로 아래 */
 .lap-counter {
   position: fixed;
   z-index: 10;
-  top: calc(16px + clamp(120px, 16vw, 190px) + 10px);
+  /* 미니맵: 위 16px + 폭 + 안쪽 여백 12px, 그 아래 10px 띄움 */
+  top: calc(16px + clamp(120px, 16vw, 190px) + 12px + 10px);
   right: 16px;
   margin: 0;
   padding: 4px 12px 6px;
+  text-align: right;
   border-radius: 8px;
   background: var(--panel);
   color: var(--ink-dim);
@@ -840,11 +831,6 @@ kbd.wide {
 .results-list li.is-racing .results-time {
   font: 500 13px var(--ui-font);
 }
-.results-foot {
-  margin: 12px 0 0;
-  color: var(--ink-dim);
-  font-size: 13px;
-}
 
 /* 아직 달리는 사람에게: 1등 도착 후 남은 시간 */
 .finish-alert {
@@ -884,4 +870,331 @@ kbd.wide {
   color: var(--grid-white);
   font: 600 14px var(--gauge-font);
   font-variant-numeric: tabular-nums;
+}
+.grid-tag.is-ready {
+  background: rgba(76, 255, 106, 0.16);
+  color: var(--go-green);
+}
+.results-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.results-head .results-title {
+  margin: 0;
+}
+.results-timer {
+  color: var(--amber);
+  font: 700 22px var(--gauge-font);
+  font-variant-numeric: tabular-nums;
+}
+.lap-time {
+  display: block;
+  color: var(--grid-white);
+  font: 600 16px/1.2 var(--gauge-font);
+  font-variant-numeric: tabular-nums;
+}
+.tower-laps.is-fast {
+  background: rgba(255, 181, 71, 0.18);
+  color: var(--amber);
+}
+
+/* ---- 차량 고르기: 화면 오른쪽 아래, 모델 미리보기 카드 ---- */
+.vehicle-pick {
+  position: fixed;
+  z-index: 10;
+  right: 16px;
+  bottom: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 150px));
+  gap: 8px;
+  margin: 0;
+  padding: 12px 12px 12px 10px;
+  border: 0;
+  border-left: 10px solid transparent;
+  border-image: var(--curb-stripe) 1;
+  background: color-mix(in srgb, var(--pit-navy) 94%, transparent);
+  box-shadow: 0 18px 40px rgba(4, 8, 24, 0.45);
+  color: var(--grid-white);
+  font: 15px/1.4 var(--ui-font);
+}
+.vehicle-pick-title {
+  float: left; /* fieldset legend를 패널 안쪽 첫 줄로 */
+  grid-column: 1 / -1;
+  margin-bottom: 2px;
+  padding: 0;
+  font: 700 15px var(--ui-font);
+}
+.vehicle-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--pit-line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  overflow: hidden;
+}
+.vehicle-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.vehicle-card.is-on {
+  border-color: var(--curb-red);
+  background: rgba(211, 47, 47, 0.2);
+}
+.vehicle-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.vehicle-preview {
+  height: 96px !important; /* r3f Canvas는 부모 크기를 따르므로 높이를 직접 */
+}
+.vehicle-name {
+  padding: 4px 0 7px;
+  text-align: center;
+  font-weight: 700;
+}
+@media (max-width: 520px) {
+  .vehicle-pick {
+    grid-template-columns: repeat(2, minmax(0, 110px));
+  }
+  .vehicle-preview {
+    height: 72px !important;
+  }
+}
+/* 방 목록은 4줄까지 보이고 넘치면 목록 안에서만 스크롤 — 아래 방 만들기 버튼은 항상 보인다 */
+.tower {
+  --tower-row: 57px; /* 한 줄 높이 (.tower-main 56px + 아래 줄선 1px) */
+  max-height: calc(var(--tower-row) * 4 + 1px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(214, 224, 255, 0.35) transparent;
+}
+/* 자리가 모자라면 방 이름이 먼저 줄어든다 (바퀴 · 속도 표시는 잘리지 않게) */
+.tower-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 방 패널 버튼 (방 나가기 · START · READY): 같은 크기로 패널 폭을 꽉 채운다 */
+.grid-panel .btn-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+}
+/* 맵 표시 색 (방 목록) */
+.tower-laps.map-desert {
+  background: rgba(230, 81, 0, 0.22);
+  color: #ffb27a;
+}
+.tower-laps.map-polar {
+  background: rgba(30, 136, 229, 0.22);
+  color: #9fd2ff;
+}
+
+/* ---------- 맵 선택 (미니맵 아래 버튼 + 모달) ---------- */
+.map-pick-open {
+  position: fixed;
+  z-index: 10;
+  top: calc(16px + clamp(120px, 16vw, 190px) + 12px + 10px); /* .lap-counter와 같은 자리 */
+  right: 16px;
+  width: calc(clamp(120px, 16vw, 190px) + 12px);
+  background: var(--panel);
+}
+.map-pick-open:hover {
+  background: rgba(58, 68, 82, 0.92);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.map-dialog {
+  box-sizing: border-box;
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(640px, calc(100vh - 32px));
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  color: var(--grid-white);
+  font: 15px/1.5 var(--ui-font);
+  background: color-mix(in srgb, var(--pit-navy) 82%, transparent);
+  backdrop-filter: blur(6px);
+  border: 0;
+  border-left: 10px solid transparent;
+  border-image: var(--curb-stripe) 1;
+  box-shadow: 0 18px 40px rgba(4, 8, 24, 0.45);
+}
+.map-dialog:not([open]) {
+  display: none;
+}
+.map-dialog::backdrop {
+  background: rgba(4, 8, 24, 0.3);
+}
+.map-dialog h2 {
+  margin: 0;
+}
+/* 맵이 늘어나면 목록만 스크롤 */
+.map-list {
+  margin: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+  overflow-y: auto;
+  padding: 4px; /* 선택 테두리 · 포커스 링이 잘리지 않게 */
+  min-height: 0;
+}
+.map-item {
+  width: 100%;
+  padding: 10px 10px 12px;
+  display: grid;
+  gap: 8px;
+  text-align: left;
+  font: 700 16px var(--ui-font);
+  color: var(--grid-white);
+  background: color-mix(in srgb, var(--pit-row) 70%, transparent);
+  border: 0;
+  border-bottom: 6px solid;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.map-item svg {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 4px;
+}
+.map-item:hover {
+  background: color-mix(in srgb, var(--pit-row) 80%, white);
+}
+.map-item[aria-pressed='true'] {
+  box-shadow: inset 0 0 0 2px var(--amber);
+}
+.map-item[aria-pressed='true'] span::after {
+  content: ' ✓';
+  color: var(--amber);
+}
+
+/* ---------- 로딩 화면 (첫 진입 · 맵 변경) ---------- */
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  color: var(--grid-white);
+  font: 15px/1.5 var(--ui-font);
+  background: color-mix(in srgb, var(--pit-navy) 72%, transparent);
+  backdrop-filter: blur(4px);
+}
+.loading-screen p {
+  margin: 0;
+}
+.loading-map {
+  font: 700 clamp(34px, 6vw, 56px) / 1 var(--gauge-font);
+  letter-spacing: 0.04em;
+  transform: var(--slant);
+}
+.loading-text {
+  color: var(--ink-dim);
+}
+/* 연석 무늬 띠가 흘러간다 */
+.loading-bar {
+  position: relative;
+  width: min(280px, 70vw);
+  height: 10px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+/* 무늬를 transform으로 옮긴다: 브라우저 합성 스레드가 돌려서 맵 계산으로 메인 스레드가 막혀도 계속 흐른다 */
+.loading-bar::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 -36px;
+  background: repeating-linear-gradient(90deg, var(--curb-red) 0 18px, var(--grid-white) 18px 36px);
+  will-change: transform;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .loading-bar::before {
+    animation: loading-run 0.6s linear infinite;
+  }
+}
+@keyframes loading-run {
+  to {
+    transform: translateX(36px);
+  }
+}
+
+/* ---------- 방 이름 아래 태그 줄 (맵 · 바퀴 수 · 속도 · 인원) ---------- */
+.tower-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.grid-panel .tag-row {
+  margin-top: 6px;
+  gap: 4px;
+}
+.grid-panel .tag-row .tower-laps {
+  padding: 2px 8px;
+  font-size: 13px;
+}
+/* 방장용: 태그를 누르면 아래로 펼쳐지는 목록 */
+.tag-menu {
+  position: relative;
+}
+.tag-select {
+  border: 0;
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+.tag-select:hover,
+.tag-select[aria-expanded='true'] {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.tag-menu-list {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: color-mix(in srgb, var(--pit-navy) 94%, transparent);
+  border: 1px solid var(--pit-line);
+  border-radius: 6px;
+  box-shadow: 0 10px 24px rgba(4, 8, 24, 0.45);
+}
+.tag-menu-list button {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--grid-white);
+  font: 600 13px var(--ui-font);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tag-menu-list button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.tag-menu-list button[aria-checked='true'] {
+  color: var(--amber);
+}
+.tag-menu-list button[aria-checked='true']::after {
+  content: ' ✓';
 }

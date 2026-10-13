@@ -43,7 +43,9 @@ export const canDrive = () => race.phase === 'racing' && !race.finished
 const PRE_DELAY = 2000 // 출발을 누른 뒤 첫 신호까지 (ms)
 const BEAT = 1000 // 신호 간격 (ms)
 const CUE_HOLD = 900 // START 글자를 보여 주는 시간 (ms)
-const START_BOOST_WINDOW = 300 // 초록불이 켜진 뒤 이 시간 안에 ↑를 누르면 스타트 부스터 (ms)
+// 스타트 부스터 판정 구간: 초록불 EARLY ms 전 ~ LATE ms 후 (신호음과 손의 반응을 감안해 초록불보다 조금 앞당김)
+const START_BOOST_EARLY = 100
+const START_BOOST_LATE = 200
 
 /** 신호 순서: 3·2는 빨강(정지), 1은 노랑(준비), START에 초록(출발) */
 const STEPS: { cue: string; light: Light; freq: number; length: number }[] = [
@@ -59,34 +61,48 @@ function clearTimers() {
   timers = []
 }
 
-// ---- 스타트 부스터: 초록불에 맞춰 ↑를 처음 누르면. 신호 전에 미리 누르면(부정 출발) 기회가 사라진다 ----
+// ---- 스타트 부스터: 초록불에 맞춰 ↑를 처음 누르면. 판정 구간보다 일찍 누르면(부정 출발) 기회가 사라진다 ----
+/** 초록불 시각 (카운트다운 시작 때 예정 시각으로 정해 두고, 실제로 켜질 때 다시 맞춘다) */
 let greenAt = 0
-let startBoostReady = false
+/** 지금 바퀴를 시작한 시각 (1바퀴 = 초록불, 그다음은 출발선을 통과해 새 바퀴를 시작한 순간) */
+let lapStartAt = 0
+/** 지금 바퀴의 경과 시간 (ms) */
+export const lapTime = () => performance.now() - lapStartAt
+let startBoostReady = false // 아직 판정 전 (한 레이스에 한 번)
+let startBoostQueued = false // 판정 성공 — 초록불이 켜지면 부스터
 
-/** ↑를 새로 누를 때마다 부른다. 스타트 부스터를 써야 하면 true (한 레이스에 한 번만 판정) */
-export function tryStartBoost(now: number) {
-  if (!startBoostReady) return false
-  if (race.phase === 'countdown') {
-    startBoostReady = false // 신호 전에 누름
-    return false
-  }
-  if (race.phase !== 'racing') return false
+/** ↑를 새로 누를 때마다 부른다 (카운트다운 중에도). 첫 입력만 판정한다 */
+export function pressForward(now: number) {
+  if (!startBoostReady || (race.phase !== 'countdown' && race.phase !== 'racing')) return
   startBoostReady = false
-  return now - greenAt <= START_BOOST_WINDOW
+  const dt = now - greenAt
+  if (dt >= -START_BOOST_EARLY && dt <= START_BOOST_LATE) startBoostQueued = true
+}
+
+/** 매 프레임 부른다: 초록불 이후 판정에 성공해 있으면 한 번 true (초록불 직전에 누른 것도 초록불에 맞춰 나간다) */
+export function takeStartBoost() {
+  if (!startBoostQueued || race.phase !== 'racing') return false
+  startBoostQueued = false
+  return true
 }
 
 export function startCountdown() {
   clearTimers()
   resetLapCount()
   startBoostReady = true
+  startBoostQueued = false
+  greenAt = performance.now() + PRE_DELAY + (STEPS.length - 1) * BEAT
   set({ phase: 'countdown', light: 'off', cue: null })
   STEPS.forEach((step, i) => {
     timers.push(
-      window.setTimeout(() => {
-        beep(step.freq, step.length)
-        if (step.cue === 'START') greenAt = performance.now()
-        set({ light: step.light, cue: step.cue, ...(step.cue === 'START' ? { phase: 'racing' } : {}) })
-      }, PRE_DELAY + i * BEAT),
+      window.setTimeout(
+        () => {
+          beep(step.freq, step.length)
+          if (step.cue === 'START') greenAt = lapStartAt = performance.now()
+          set({ light: step.light, cue: step.cue, ...(step.cue === 'START' ? { phase: 'racing' } : {}) })
+        },
+        PRE_DELAY + i * BEAT,
+      ),
     )
   })
   timers.push(window.setTimeout(() => set({ cue: null }), PRE_DELAY + (STEPS.length - 1) * BEAT + CUE_HOLD))
@@ -96,7 +112,13 @@ export function startCountdown() {
 export function enterRoom(started: boolean, laps: number) {
   clearTimers()
   resetLapCount()
-  set({ laps, lap: 1, finished: false, ...(started ? { phase: 'racing', light: 'green', cue: null } : { phase: 'waiting', light: 'off', cue: null }) })
+  lapStartAt = performance.now()
+  set({
+    laps,
+    lap: 1,
+    finished: false,
+    ...(started ? { phase: 'racing', light: 'green', cue: null } : { phase: 'waiting', light: 'off', cue: null }),
+  })
 }
 
 // ---- 바퀴 세기: 출발선(중심선 샘플 0번)을 앞으로 지나면 +1, 거꾸로 지나면 -1 ----
@@ -104,9 +126,11 @@ export function enterRoom(started: boolean, laps: number) {
 let crossings = 0
 let lastIndex = -1
 let lastN = 1
+let timedLaps = 0 // 랩타임을 새로 시작한 완주 바퀴 수 — 출발선을 뒤로 넘었다 다시 넘어도 두 번 재시작하지 않게
 function resetLapCount() {
   crossings = 0
   lastIndex = -1
+  timedLaps = 0
 }
 
 /** 레이스 진행도 (바퀴 단위, 순위 비교용): 완주한 바퀴 + 이번 바퀴에서 간 비율. 출발선 뒤에서는 0보다 약간 작다 */
@@ -130,6 +154,10 @@ export function updateLap(index: number, n: number) {
   if (!forward && !backward) return false
   crossings += forward ? 1 : -1
   const done = crossings - 1 // 완주한 바퀴 수
+  if (done > timedLaps) {
+    timedLaps = done
+    lapStartAt = performance.now()
+  }
   if (done >= race.laps) {
     set({ finished: true, lap: race.laps })
     return true
@@ -137,6 +165,11 @@ export function updateLap(index: number, n: number) {
   const lap = Math.min(Math.max(done + 1, 1), race.laps)
   if (lap !== race.lap) set({ lap })
   return false
+}
+
+/** 레이스 종료(서버가 알림): 아직 달리던 사람도 멈춘다 */
+export function endRace() {
+  set({ finished: true })
 }
 
 export function enterLobby() {

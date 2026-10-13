@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import type { Group } from 'three'
 import { useWorld } from '../physics/PhysicsWorld'
 import { GROUP, materials } from '../physics/world'
-import { ROAD_WIDTH, SAMPLE_SPACING, centerPoints, curvature, frames } from './trackData'
+import { ROAD_WIDTH, SAMPLE_SPACING, centerPoints, curvature, frames, trackVersion } from './trackData'
 
 /** 코너 안쪽에 놓인 라바콘 — 부딪히면 넘어진다 */
 function Cone({ position }: { position: [number, number, number] }) {
@@ -68,22 +68,26 @@ function findApexes() {
   return apexes.map((index) => ({ index, side: (curvature[index] > 0 ? 1 : -1) as 1 | -1 }))
 }
 
-export const APEXES = findApexes()
+let apexCache: { version: number; apexes: ReturnType<typeof findApexes> } | null = null
+/** 지금 맵에서 가장 급한 코너 3곳 (맵이 바뀌면 다시 찾는다) — 타이어 더미도 쓴다 */
+export function getApexes() {
+  if (!apexCache || apexCache.version !== trackVersion) apexCache = { version: trackVersion, apexes: findApexes() }
+  return apexCache.apexes
+}
 
 /** 에이펙스 앞뒤 10m 간격으로 콘 3개씩 */
 function findPlacements() {
   const n = curvature.length
-  return APEXES.flatMap(({ index: apex, side }) =>
+  return getApexes().flatMap(({ index: apex, side }) =>
     [-10, 0, 10].map((meters) => ({ index: (apex + Math.round(meters / SAMPLE_SPACING) + n) % n, side })),
   )
 }
 
-const PLACEMENTS = findPlacements()
-
 export default function Cones() {
+  const placements = useMemo(findPlacements, [])
   return (
     <>
-      {PLACEMENTS.map(({ index, side }) => {
+      {placements.map(({ index, side }) => {
         const p = centerPoints[index]
         const l = frames[index].left
         const d = (ROAD_WIDTH / 2 - 1) * side

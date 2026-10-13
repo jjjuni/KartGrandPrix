@@ -6,8 +6,8 @@ type V3 = [number, number, number]
 
 const _up = new Vector3(0, 1, 0)
 
-/** from → to를 잇는 캡슐 (팔·다리 마디) */
-function Limb({ from, to, radius, children }: { from: V3; to: V3; radius: number; children: React.ReactNode }) {
+/** from → to를 잇는 캡슐 (팔·다리 마디) — 바이크 라이더도 쓴다 */
+export function Limb({ from, to, radius, children }: { from: V3; to: V3; radius: number; children: React.ReactNode }) {
   const { position, quaternion, length } = useMemo(() => {
     const a = new Vector3(...from)
     const b = new Vector3(...to)
@@ -41,13 +41,19 @@ const HAND: V3 = [0.115, 0.27, 0.5]
 const ELBOW: V3 = [0.22, 0.27, 0.22]
 const SHOULDER: V3 = [0.16, SHOULDER_Y, -0.04]
 
-/** 레이싱 슈트 + 장갑 + 풀페이스 헬멧을 쓴 운전자 */
-export default function Driver({ upperBodyRef, color, accent, number }: DriverProps) {
-  const suit = <meshStandardMaterial color="#1565c0" roughness={0.65} />
-  const suitDark = <meshStandardMaterial color="#0d2a52" roughness={0.7} />
-  const glove = <meshStandardMaterial color="#1a1a1a" roughness={0.6} />
+/** 풀페이스 헬멧 (차체 색 줄무늬 · 미러 바이저 · 옆면 번호) — 카트 운전자와 바이크 라이더가 같이 쓴다 */
+export function Helmet({
+  position,
+  color,
+  accent,
+  number,
+}: {
+  position: V3
+  color: string
+  accent: string
+  number: number
+}) {
   const stripe = <meshStandardMaterial color={accent} roughness={0.5} />
-
   // 헬멧 옆면 번호 (투명 배경)
   const helmetTex = useMemo(
     () =>
@@ -60,6 +66,64 @@ export default function Driver({ upperBodyRef, color, accent, number }: DriverPr
       }),
     [number],
   )
+
+  return (
+    <group position={position}>
+      {/* 셸: 앞뒤로 살짝 긴 달걀형 */}
+      <mesh scale={[1, 1, 1.1]} castShadow>
+        <sphereGeometry args={[0.18, 28, 20]} />
+        <meshPhysicalMaterial color="#fafafa" metalness={0.15} roughness={0.2} clearcoat={1} />
+      </mesh>
+      {/* 턱 부분 */}
+      <mesh position={[0, -0.09, 0.07]} scale={[0.92, 0.6, 1]} castShadow>
+        <sphereGeometry args={[0.16, 20, 14]} />
+        <meshPhysicalMaterial color="#fafafa" metalness={0.15} roughness={0.2} clearcoat={1} />
+      </mesh>
+      {/* 정수리 → 뒤통수 줄무늬 (차체 색) */}
+      <mesh rotation={[0, Math.PI / 2, 0]} scale={[1.1, 1, 1]}>
+        <torusGeometry args={[0.181, 0.032, 8, 32, Math.PI]} />
+        <meshStandardMaterial color={color} roughness={0.3} />
+      </mesh>
+      {[-1, 1].map((s) => (
+        <mesh key={s} position={[s * 0.06, 0, 0]} rotation={[0, Math.PI / 2, 0]} scale={[1.1, 1, 1]}>
+          <torusGeometry args={[0.176, 0.008, 6, 32, Math.PI]} />
+          {stripe}
+        </mesh>
+      ))}
+      {/* 바이저 (미러 코팅) */}
+      <mesh position={[0, 0.0, 0.035]} rotation={[0.05, 0, 0]} scale={[1, 1, 1.1]}>
+        <sphereGeometry args={[0.172, 28, 12, Math.PI * 0.18, Math.PI * 0.64, Math.PI * 0.4, Math.PI * 0.2]} />
+        <meshPhysicalMaterial color="#2a1d4a" metalness={1} roughness={0.05} iridescence={1} iridescenceIOR={1.6} />
+      </mesh>
+      {/* 바이저 고정 나사 */}
+      {[-1, 1].map((s) => (
+        <mesh key={s} position={[s * 0.168, 0.0, 0.05]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.022, 0.022, 0.02, 12]} />
+          <meshStandardMaterial color="#333" metalness={0.6} roughness={0.3} />
+        </mesh>
+      ))}
+      {/* 헬멧 뒤 스포일러 */}
+      <mesh position={[0, 0.07, -0.19]} rotation={[0.5, 0, 0]} castShadow>
+        <boxGeometry args={[0.16, 0.025, 0.06]} />
+        <meshStandardMaterial color={color} roughness={0.3} />
+      </mesh>
+      {/* 옆면 번호 */}
+      {[-1, 1].map((s) => (
+        <mesh key={s} position={[s * 0.183, 0.05, -0.06]} rotation={[0, (s * Math.PI) / 2, 0]}>
+          <planeGeometry args={[0.12, 0.06]} />
+          <meshStandardMaterial map={helmetTex} transparent depthWrite={false} />
+        </mesh>
+      ))}
+    </group>
+  )
+}
+
+/** 레이싱 슈트 + 장갑 + 풀페이스 헬멧을 쓴 운전자 */
+export default function Driver({ upperBodyRef, color, accent, number }: DriverProps) {
+  const suit = <meshStandardMaterial color="#1565c0" roughness={0.65} />
+  const suitDark = <meshStandardMaterial color="#0d2a52" roughness={0.7} />
+  const glove = <meshStandardMaterial color="#1a1a1a" roughness={0.6} />
+  const stripe = <meshStandardMaterial color={accent} roughness={0.5} />
 
   return (
     <group position={[0, 0.05, -0.33]}>
@@ -153,56 +217,7 @@ export default function Driver({ upperBodyRef, color, accent, number }: DriverPr
           <meshStandardMaterial color="#222" roughness={0.5} />
         </mesh>
 
-        {/* ---------- 풀페이스 헬멧 ---------- */}
-        <group position={[0, 0.65, -0.04]}>
-          {/* 셸: 앞뒤로 살짝 긴 달걀형 */}
-          <mesh scale={[1, 1, 1.1]} castShadow>
-            <sphereGeometry args={[0.18, 28, 20]} />
-            <meshPhysicalMaterial color="#fafafa" metalness={0.15} roughness={0.2} clearcoat={1} />
-          </mesh>
-          {/* 턱 부분 */}
-          <mesh position={[0, -0.09, 0.07]} scale={[0.92, 0.6, 1]} castShadow>
-            <sphereGeometry args={[0.16, 20, 14]} />
-            <meshPhysicalMaterial color="#fafafa" metalness={0.15} roughness={0.2} clearcoat={1} />
-          </mesh>
-          {/* 정수리 → 뒤통수 줄무늬 (차체 색) */}
-          <mesh rotation={[0, Math.PI / 2, 0]} scale={[1.1, 1, 1]}>
-            <torusGeometry args={[0.181, 0.032, 8, 32, Math.PI]} />
-            <meshStandardMaterial color={color} roughness={0.3} />
-          </mesh>
-          {[-1, 1].map((s) => (
-            <mesh key={s} position={[s * 0.06, 0, 0]} rotation={[0, Math.PI / 2, 0]} scale={[1.1, 1, 1]}>
-              <torusGeometry args={[0.176, 0.008, 6, 32, Math.PI]} />
-              {stripe}
-            </mesh>
-          ))}
-          {/* 바이저 (미러 코팅) */}
-          <mesh position={[0, 0.0, 0.035]} rotation={[0.05, 0, 0]} scale={[1, 1, 1.1]}>
-            <sphereGeometry
-              args={[0.172, 28, 12, Math.PI * 0.18, Math.PI * 0.64, Math.PI * 0.4, Math.PI * 0.2]}
-            />
-            <meshPhysicalMaterial color="#2a1d4a" metalness={1} roughness={0.05} iridescence={1} iridescenceIOR={1.6} />
-          </mesh>
-          {/* 바이저 고정 나사 */}
-          {[-1, 1].map((s) => (
-            <mesh key={s} position={[s * 0.168, 0.0, 0.05]} rotation={[0, 0, Math.PI / 2]}>
-              <cylinderGeometry args={[0.022, 0.022, 0.02, 12]} />
-              <meshStandardMaterial color="#333" metalness={0.6} roughness={0.3} />
-            </mesh>
-          ))}
-          {/* 헬멧 뒤 스포일러 */}
-          <mesh position={[0, 0.07, -0.19]} rotation={[0.5, 0, 0]} castShadow>
-            <boxGeometry args={[0.16, 0.025, 0.06]} />
-            <meshStandardMaterial color={color} roughness={0.3} />
-          </mesh>
-          {/* 옆면 번호 */}
-          {[-1, 1].map((s) => (
-            <mesh key={s} position={[s * 0.183, 0.05, -0.06]} rotation={[0, (s * Math.PI) / 2, 0]}>
-              <planeGeometry args={[0.12, 0.06]} />
-              <meshStandardMaterial map={helmetTex} transparent depthWrite={false} />
-            </mesh>
-          ))}
-        </group>
+        <Helmet position={[0, 0.65, -0.04]} color={color} accent={accent} number={number} />
       </group>
     </group>
   )

@@ -1,6 +1,7 @@
-import { CURB_OFFSET, centerPoints } from './trackData'
+import { CURB_OFFSET, centerPoints, frames, isIceAt } from './trackData'
 
-export type Surface = 'road' | 'grass'
+/** road: 도로 · grass: 코스 밖(맵에 따라 잔디·모래·눈) · ice: 빙판 구간의 도로 */
+export type Surface = 'road' | 'grass' | 'ice'
 
 /** 도로로 치는 범위: 중심선에서 연석 바깥 끝까지 (연석 폭 0.8m) */
 export const ROAD_EDGE = CURB_OFFSET + 0.4
@@ -13,9 +14,11 @@ const LOST = 30 // 이보다 멀면(리셋 등) 전체를 다시 찾는다 (m)
  * 매 물리 스텝 바퀴 4개마다 불리므로, 직전에 찾은 중심선 샘플 주변만 훑어서 빠르게 찾는다.
  */
 export function createSurfaceTracker() {
-  const n = centerPoints.length
   let last = 0
   return (x: number, z: number): Surface => {
+    // 맵을 바꾸면 샘플 수가 달라진다 — 옛 카트가 사라지기 전 마지막 스텝에서도 범위 안에서 찾게
+    const n = centerPoints.length
+    last %= n
     let best = Infinity
     let bestIndex = last
     for (let k = -WINDOW; k <= WINDOW; k++) {
@@ -38,6 +41,9 @@ export function createSurfaceTracker() {
       }
     }
     last = bestIndex
-    return Math.sqrt(best) <= ROAD_EDGE ? 'road' : 'grass'
+    if (Math.sqrt(best) > ROAD_EDGE) return 'grass'
+    const p = centerPoints[bestIndex]
+    const { left } = frames[bestIndex]
+    return isIceAt(bestIndex, (x - p.x) * left.x + (z - p.z) * left.z) ? 'ice' : 'road'
   }
 }

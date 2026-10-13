@@ -3,14 +3,12 @@ import { Color, DoubleSide, ExtrudeGeometry, Matrix4, PlaneGeometry, Quaternion,
 import { useWorld } from '../physics/PhysicsWorld'
 import { WALL_COLLIDER_HEIGHT, WALL_THICKNESS, createWallBodies, wallTransform } from '../physics/trackBodies'
 import { makeCanvasTexture } from '../utils/canvasTexture'
-import { WALL_OFFSET, offsetPoints } from './trackData'
+import { WALL_OFFSET, currentMap, offsetPoints } from './trackData'
 
 const WALL_SEGMENT = 3
 const WALL_HEIGHT = 0.9 // 보이는 높이 (충돌 높이는 WALL_COLLIDER_HEIGHT로 더 높음 — 튀어서 넘어가지 못하게)
 const FENCE_HEIGHT = 1.6 // 방벽 위 철망 높이
 const POST_EVERY = 2 // 기둥 간격 (세그먼트 수)
-const RED = new Color('#c62828')
-const WHITE = new Color('#eeeeee')
 
 /** 콘크리트 방호벽 단면 (아래가 넓고 위로 좁아지는 저지 배리어). 인스턴스 원점 = 충돌 박스 중심 */
 function barrierGeometry(length: number) {
@@ -81,6 +79,8 @@ function WallSide({ offset, fence }: { offset: number; fence: ReturnType<typeof 
   const postCount = Math.ceil(segments.length / POST_EVERY)
 
   useLayoutEffect(() => {
+    // 맵 색 블록 (6m = 2칸마다 번갈아)
+    const [colorA, colorB] = currentMap.theme.walls.map((c) => new Color(c))
     const m = new Matrix4()
     const one = new Vector3(1, 1, 1)
     const up = new Vector3()
@@ -92,7 +92,7 @@ function WallSide({ offset, fence }: { offset: number; fence: ReturnType<typeof 
       m.compose(pos, quat, one)
       wallRef.current!.setMatrixAt(i, m)
       // 6m(2칸)마다 색이 바뀌는 블록
-      wallRef.current!.setColorAt(i, Math.floor(i / 2) % 2 ? RED : WHITE)
+      wallRef.current!.setColorAt(i, Math.floor(i / 2) % 2 ? colorA : colorB)
 
       // 철망: 방벽 윗면에서 FENCE_HEIGHT만큼
       up.set(0, WALL_HEIGHT - WALL_COLLIDER_HEIGHT / 2 + FENCE_HEIGHT / 2, 0).applyQuaternion(quat)

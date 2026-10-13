@@ -1,20 +1,32 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { kartState } from '../game/kartState'
+import { KART } from '../physics/vehicle'
+import { useOnline } from '../ui/hooks'
 
 /**
- * 하단 중앙 계기판: 반원형 아날로그 속도계(0~140km/h) + 디지털 속도 + 기어(P/R/D)
+ * 하단 중앙 계기판: 반원형 아날로그 속도계(눈금은 방 속도 등급에 맞춤) + 디지털 속도 + 기어(P/R/D)
  * + 다이얼 아래 받침에 직선형 부스터 게이지. requestAnimationFrame으로 DOM을 직접 갱신해 리렌더링이 없다.
  */
 
-const MAX_KMH = 140
-const NORMAL_MAX_KMH = 100 // 여기부터는 부스터로만 닿는 구간
 const CX = 130
 const CY = 126
 const R = 104 // 눈금 바깥 반지름
 const START = 180 // 0km/h 각도 (SVG: +x 기준 시계 방향, 도) — 왼쪽
 const SWEEP = 180 // 왼쪽 → 위 → 오른쪽 반원
 
-const angleOf = (kmh: number) => START + (SWEEP * Math.min(Math.max(kmh, 0), MAX_KMH)) / MAX_KMH
+/**
+ * 눈금 범위: 끝 = 부스터 최고속도 + 여유를 숫자 간격(20, 빠르면 40)의 배수로 올림. 기본 140 · 빠름 180 · 매우 빠름 240.
+ * normal = 엔진 최고속도 — 여기부터는 부스터로만 닿는 구간 (하늘색)
+ */
+function makeDial() {
+  const raw = KART.boostMaxSpeed * 3.6 + 10
+  const label = raw > 180 ? 40 : 20
+  const max = Math.ceil(raw / label) * label
+  const tick = label / 4
+  return { max, normal: KART.maxSpeed * 3.6, label, ticks: Array.from({ length: max / tick + 1 }, (_, i) => i * tick) }
+}
+type Dial = ReturnType<typeof makeDial>
+const angleOf = (kmh: number, max: number) => START + (SWEEP * Math.min(Math.max(kmh, 0), max)) / max
 const polar = (r: number, deg: number) => {
   const a = (deg * Math.PI) / 180
   return [CX + r * Math.cos(a), CY + r * Math.sin(a)] as const
@@ -36,7 +48,6 @@ const housing = (r: number, inset: number) => {
   return `M ${l} ${CY} A ${r} ${r} 0 0 1 ${rt} ${CY} L ${rt} ${b - c} Q ${rt} ${b} ${rt - c} ${b} L ${l + c} ${b} Q ${l} ${b} ${l} ${b - c} Z`
 }
 
-const ticks = Array.from({ length: MAX_KMH / 5 + 1 }, (_, i) => i * 5)
 const NEEDLE_IN = 62 // 바늘은 중앙 디지털 표시를 가리지 않게 이 반지름부터 그린다
 const BAR_X = 40
 const BAR_W = CX * 2 - BAR_X * 2
@@ -51,6 +62,11 @@ export default function Hud() {
   const boostFill = useRef<SVGRectElement>(null)
   const boostLabel = useRef<SVGTextElement>(null)
   const status = useRef<HTMLDivElement>(null)
+  // 방 속도 등급이 바뀌면(방 입장 · 대기실) 눈금을 다시 그린다. 바늘은 매 프레임 ref로 최신 범위를 읽는다
+  const o = useOnline()
+  const dial: Dial = useMemo(makeDial, [o.room?.speed])
+  const maxRef = useRef(dial.max)
+  maxRef.current = dial.max
 
   useEffect(() => {
     let raf = 0
@@ -58,7 +74,7 @@ export default function Hud() {
     const tick = () => {
       const s = kartState
       const kmh = Math.abs(s.speedKmh)
-      needle.current?.setAttribute('transform', `rotate(${angleOf(kmh)} ${CX} ${CY})`)
+      needle.current?.setAttribute('transform', `rotate(${angleOf(kmh, maxRef.current)} ${CX} ${CY})`)
       const rounded = Math.round(kmh)
       if (speed.current && rounded !== shown) {
         speed.current.textContent = String(rounded)
@@ -118,15 +134,15 @@ export default function Hud() {
         <path d={housing(119, 5)} fill="url(#dial-face)" />
 
         {/* 부스터로만 닿는 구간 (100~140) */}
-        <path d={arc(R - 3, angleOf(NORMAL_MAX_KMH), angleOf(MAX_KMH))} className="dial-boost-zone" />
+        <path d={arc(R - 3, angleOf(dial.normal, dial.max), angleOf(dial.max, dial.max))} className="dial-boost-zone" />
 
         {/* 눈금 */}
-        {ticks.map((v) => {
-          const major = v % 20 === 0
-          const mid = v % 10 === 0
+        {dial.ticks.map((v) => {
+          const major = v % dial.label === 0
+          const mid = v % (dial.label / 2) === 0
           const len = major ? 13 : mid ? 8 : 4
-          const [x1, y1] = polar(R, angleOf(v))
-          const [x2, y2] = polar(R - len, angleOf(v))
+          const [x1, y1] = polar(R, angleOf(v, dial.max))
+          const [x2, y2] = polar(R - len, angleOf(v, dial.max))
           return (
             <line
               key={v}
@@ -134,16 +150,16 @@ export default function Hud() {
               y1={y1}
               x2={x2}
               y2={y2}
-              className={`dial-tick ${major ? 'major' : ''} ${v > NORMAL_MAX_KMH ? 'boost' : ''}`}
+              className={`dial-tick ${major ? 'major' : ''} ${v > dial.normal ? 'boost' : ''}`}
             />
           )
         })}
-        {ticks
-          .filter((v) => v % 20 === 0)
+        {dial.ticks
+          .filter((v) => v % dial.label === 0)
           .map((v) => {
-            const [x, y] = polar(R - 27, angleOf(v))
+            const [x, y] = polar(R - 27, angleOf(v, dial.max))
             return (
-              <text key={v} x={x} y={y} className={`dial-num ${v > NORMAL_MAX_KMH ? 'boost' : ''}`}>
+              <text key={v} x={x} y={y} className={`dial-num ${v > dial.normal ? 'boost' : ''}`}>
                 {v}
               </text>
             )

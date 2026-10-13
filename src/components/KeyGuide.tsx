@@ -4,7 +4,7 @@ const STORAGE_KEY = 'kart.keyGuide.hidden'
 
 /** 좌측 하단 조작 안내. H로 접고 펼친다 (브라우저에 기억) */
 const ROWS: { keys: string[]; joiner?: string; label: string }[] = [
-  { keys: ['W', 'A', 'S', 'D'], label: '운전' },
+  { keys: ['↑', '←', '↓', '→'], label: '운전' },
   { keys: ['Space'], label: '브레이크' },
   { keys: ['Shift', '←→'], joiner: '+', label: '드리프트' },
   { keys: ['↑'], label: '순간 부스터 (드리프트 직후)' },

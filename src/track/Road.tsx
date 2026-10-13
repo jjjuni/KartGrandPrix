@@ -1,9 +1,11 @@
 import { useMemo } from 'react'
 import { BufferGeometry, Float32BufferAttribute } from 'three'
 import { makeCanvasTexture, seededRandom } from '../utils/canvasTexture'
-import { ROAD_WIDTH, centerPoints, frames } from './trackData'
+import { ROAD_WIDTH, centerPoints, currentMap, frames } from './trackData'
 
 const TEXTURE_LENGTH = 8 // 텍스처 한 장이 덮는 도로 길이 (m)
+/** 맵별 도로 색조 (질감에 곱해진다) */
+const ROAD_TINT = { grass: '#ffffff', sand: '#f2dfc4', snow: '#e4edf7' }
 const LIFT = 0.06 // 지면(Heightfield 메시)과 겹쳐 깜빡이지 않도록 살짝 띄움
 
 /** 아스팔트(골재 알갱이 + 보수 자국) + 타이어가 지나는 어두운 주행 라인 + 가장자리 흰 선 + 중앙 점선 */
@@ -104,7 +106,14 @@ export default function Road() {
 
   return (
     <mesh geometry={geometry} receiveShadow>
-      <meshStandardMaterial map={texture} roughness={0.85} polygonOffset polygonOffsetFactor={-2} polygonOffsetUnits={-2} />
+      <meshStandardMaterial
+        map={texture}
+        color={ROAD_TINT[currentMap.theme.ground.style]}
+        roughness={0.85}
+        polygonOffset
+        polygonOffsetFactor={-2}
+        polygonOffsetUnits={-2}
+      />
     </mesh>
   )
 }

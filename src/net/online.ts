@@ -1,5 +1,7 @@
 import { kartState } from '../game/kartState'
-import { enterLobby, enterRoom, raceProgress, startCountdown } from '../game/race'
+import { endRace, enterLobby, enterRoom, raceProgress, startCountdown } from '../game/race'
+import { setSpeedClass, setVehicleStats, type SpeedClass, type Vehicle } from '../physics/vehicle'
+import type { MapId } from '../track/maps'
 import { GRID_SLOTS } from '../track/trackData'
 
 /**
@@ -26,9 +28,29 @@ export type PeerState = {
   /** 레이스 진행도 (바퀴 단위) — 실시간 순위 */
   progress: number
 }
-export type RoomSummary = { id: string; name: string; locked: boolean; count: number; max: number; started: boolean; laps: number }
-export type Member = { id: number; name: string; slot: number }
-export type RoomDetail = { id: string; name: string; hostId: number; started: boolean; laps: number; members: Member[] }
+export type RoomSummary = {
+  id: string
+  name: string
+  locked: boolean
+  count: number
+  max: number
+  started: boolean
+  laps: number
+  speed: SpeedClass
+  map: MapId
+}
+export type { Vehicle }
+export type Member = { id: number; name: string; slot: number; ready: boolean; vehicle: Vehicle }
+export type RoomDetail = {
+  id: string
+  name: string
+  hostId: number
+  started: boolean
+  laps: number
+  speed: SpeedClass
+  map: MapId
+  members: Member[]
+}
 /** 결승선 도착 기록 (도착 순서 = rank, time = 출발 신호부터 ms, 서버가 잼) */
 export type Result = { id: number; name: string; time: number; rank: number }
 export type ErrorCode = 'name' | 'roomName' | 'passwordFormat' | 'tooManyRooms' | 'notFound' | 'full' | 'password' | 'started'
@@ -44,12 +66,16 @@ export const online = {
   name: '',
   rooms: [] as RoomSummary[],
   room: null as RoomDetail | null,
+  /** 내가 고른 차량 */
+  vehicle: 'kart' as Vehicle,
   /** 이 방의 출발 그리드 칸 */
   slot: 0,
   /** 이번 레이스의 도착 기록 (실시간) */
   results: [] as Result[],
-  /** 방이 출발 전 상태로 돌아가는 시각 (performance.now 기준), 1등 도착 전이면 null */
+  /** 다음 단계까지 남은 시각 (performance.now 기준): 레이스 중엔 종료(1등 + 30초), 점수판 중엔 방 초기화. 1등 도착 전이면 null */
   resetAt: null as number | null,
+  /** 레이스 종료 — 모두에게 최종 점수판 (몇 초 뒤 방 초기화) */
+  final: false,
   error: null as { code: ErrorCode; roomId?: string } | null,
 }
 
@@ -111,10 +137,10 @@ export function enterWithName(name: string) {
   notify()
 }
 
-export function createRoom(name: string, password: string | null, laps: number) {
+export function createRoom(name: string, password: string | null, laps: number, speed: SpeedClass) {
   online.error = null
   notify()
-  sendMsg({ type: 'create', name, password, laps })
+  sendMsg({ type: 'create', name, password, laps, speed })
 }
 export function joinRoom(roomId: string, password?: string) {
   online.error = null
@@ -127,8 +153,23 @@ export function leaveRoom() {
   sendMsg({ type: 'leave' })
   backToLobby()
 }
+/** 차량 변경 — 대기실에서, 방에서는 ready 전·출발 전까지 (서버도 같은 규칙으로 막는다) */
+export function setVehicle(vehicle: Vehicle) {
+  online.vehicle = vehicle
+  setVehicleStats(vehicle) // 게이지·부스터·최고속도가 차량마다 조금 다르다
+  notify()
+  sendMsg({ type: 'vehicle', vehicle })
+}
+/** 방 설정(맵 · 바퀴 수 · 속도) 변경 — 방장 · 출발 전에만 (서버도 같은 규칙으로 막는다) */
+export function setRoomSettings(settings: { map?: MapId; laps?: number; speed?: SpeedClass }) {
+  sendMsg({ type: 'settings', ...settings })
+}
 export function startRace() {
   sendMsg({ type: 'start' })
+}
+/** 준비 상태를 켜고 끈다 (방장이 아닌 사람) */
+export function toggleReady() {
+  sendMsg({ type: 'ready' })
 }
 /** 정해진 바퀴를 다 돌았다고 알린다 (기록은 서버가 잰다) */
 export function sendFinish() {
@@ -146,8 +187,10 @@ export function sendHit(to: number, vx: number, vz: number) {
 
 function backToLobby() {
   online.room = null
+  setSpeedClass('normal')
   online.results = []
   online.resetAt = null
+  online.final = false
   peers.clear()
   enterLobby()
   spawn(0)
@@ -165,6 +208,7 @@ function connect() {
   ws.onopen = () => {
     online.status = 'open'
     if (wantedName) ws.send(JSON.stringify({ type: 'hello', name: wantedName }))
+    ws.send(JSON.stringify({ type: 'vehicle', vehicle: online.vehicle })) // 다시 연결돼도 고른 차량 유지
     notify()
     // 방 안에 있을 때만 내 카트 상태를 보낸다
     timer = window.setInterval(() => {
@@ -200,10 +244,12 @@ function connect() {
         break
       case 'joined':
         online.room = msg.room
+        setSpeedClass(msg.room.speed) // 이 방의 가속·최고속도
         // 칸 번호가 범위 밖이면(예: 다른 버전 서버) 0번 칸
         online.slot = Number.isInteger(msg.slot) && msg.slot >= 0 && msg.slot < GRID_SLOTS ? msg.slot : 0
         online.results = []
         online.resetAt = null
+        online.final = false
         peers.clear()
         enterRoom(msg.room.started, msg.room.laps)
         spawn(online.slot)
@@ -212,14 +258,26 @@ function connect() {
         online.results = msg.results
         online.resetAt = performance.now() + msg.remaining
         break
+      case 'final':
+        online.results = msg.results
+        online.resetAt = performance.now() + msg.remaining
+        online.final = true
+        endRace()
+        break
       case 'reset':
         // 1등 도착 30초 뒤: 모두 출발 그리드로 돌아가 다음 출발을 기다린다
         online.results = []
         online.resetAt = null
+        online.final = false
         enterRoom(false, online.room?.laps ?? 1)
         spawn(online.slot)
         break
       case 'room':
+        // 출발 전에 방장이 바퀴 수 · 속도를 바꾸면 내 레이스 설정도 따라 바꾼다
+        if (!msg.room.started && online.room && (msg.room.laps !== online.room.laps || msg.room.speed !== online.room.speed)) {
+          setSpeedClass(msg.room.speed)
+          enterRoom(false, msg.room.laps)
+        }
         online.room = msg.room
         break
       case 'countdown':

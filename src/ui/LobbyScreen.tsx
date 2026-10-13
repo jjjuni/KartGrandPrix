@@ -1,15 +1,20 @@
 import { useState, type FormEvent } from 'react'
 import { clearError, createRoom, joinRoom, type ErrorCode, type RoomSummary } from '../net/online'
+import type { SpeedClass } from '../physics/vehicle'
+import { MAPS } from '../track/maps'
 import { useOnline } from './hooks'
 
+/** 방 속도 이름 (방 목록 · 방 패널에서도 쓴다) */
+export const SPEED_LABEL: Record<SpeedClass, string> = { normal: '기본', fast: '빠름', faster: '매우 빠름' }
+
 const ERRORS: Partial<Record<ErrorCode, string>> = {
-  roomName: '방 이름은 1~20자로 입력해 주세요.',
-  passwordFormat: '비밀번호는 1~20자로 입력해 주세요.',
-  tooManyRooms: '지금은 방을 더 만들 수 없어요. 열린 방에 들어가 보세요.',
-  notFound: '그 방은 방금 사라졌어요. 목록에서 다른 방을 골라 주세요.',
-  full: '8명이 모두 찬 방이라 들어갈 수 없어요.',
-  password: '비밀번호가 맞지 않아요. 다시 입력해 주세요.',
-  started: '이미 주행 중인 방이에요. 레이스가 끝나면 들어갈 수 있어요.',
+  roomName: '방 이름은 1~20자',
+  passwordFormat: '비밀번호는 1~20자',
+  tooManyRooms: '방을 더 만들 수 없어요',
+  notFound: '없는 방이에요',
+  full: '만석이에요',
+  password: '비밀번호가 틀렸어요',
+  started: '주행 중인 방이에요',
 }
 
 function LockIcon() {
@@ -27,7 +32,7 @@ function RoomRow({ room, open, onOpen }: { room: RoomSummary; open: boolean; onO
   const full = room.count >= room.max
   // 만석이거나 주행 중인 방은 들어갈 수 없다
   const closed = full || room.started
-  const label = `${room.name}, ${room.laps}바퀴, ${room.count}/${room.max}명, ${room.started ? '주행 중' : '출발 전'}${room.locked ? ', 비밀 방' : ''}${full ? ', 만석' : ''}`
+  const label = `${room.name}, ${MAPS[room.map]?.name ?? ''} 맵, ${room.laps}바퀴, ${SPEED_LABEL[room.speed]}, ${room.count}/${room.max}명, ${room.started ? '주행 중' : '출발 전'}${room.locked ? ', 비밀 방' : ''}${full ? ', 만석' : ''}`
 
   const enter = () => {
     if (closed) return
@@ -47,9 +52,15 @@ function RoomRow({ room, open, onOpen }: { room: RoomSummary; open: boolean; onO
           <small>/{room.max}</small>
         </span>
         <span className="tower-name">
-          {room.locked && <LockIcon />}
-          {room.name}
-          <span className="tower-laps">{room.laps}바퀴</span>
+          <span className="tower-title">
+            {room.locked && <LockIcon />}
+            <span className="tower-name-text">{room.name}</span>
+          </span>
+          <span className="tag-row">
+            <span className={`tower-laps map-${room.map}`}>{MAPS[room.map]?.name}</span>
+            <span className="tower-laps">{room.laps}바퀴</span>
+            <span className={`tower-laps ${room.speed !== 'normal' ? 'is-fast' : ''}`}>{SPEED_LABEL[room.speed]}</span>
+          </span>
         </span>
         <span className={`tower-status ${room.started ? 'is-live' : ''}`}>{full ? '만석' : room.started ? '주행 중' : '출발 전'}</span>
       </button>
@@ -78,11 +89,12 @@ function CreateRoomForm({ onCancel }: { onCancel: () => void }) {
   const [locked, setLocked] = useState(false)
   const [password, setPassword] = useState('')
   const [laps, setLaps] = useState(1)
+  const [speed, setSpeed] = useState<SpeedClass>('normal')
   const ready = name.trim() !== '' && (!locked || password.trim() !== '')
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    if (ready) createRoom(name.trim(), locked ? password.trim() : null, laps)
+    if (ready) createRoom(name.trim(), locked ? password.trim() : null, laps, speed)
   }
 
   return (
@@ -92,9 +104,9 @@ function CreateRoomForm({ onCancel }: { onCancel: () => void }) {
       </h2>
       <label className="field">
         <span className="field-label">방 이름</span>
-        <input autoFocus value={name} maxLength={20} onChange={(e) => setName(e.target.value)} placeholder="최대 20자" />
+        <input autoFocus value={name} maxLength={20} onChange={(e) => setName(e.target.value)} />
       </label>
-      <fieldset className="laps-pick">
+      <fieldset className="seg-pick">
         <legend className="field-label">바퀴 수</legend>
         {[1, 2, 3].map((n) => (
           <label key={n} className={laps === n ? 'is-on' : undefined}>
@@ -103,14 +115,23 @@ function CreateRoomForm({ onCancel }: { onCancel: () => void }) {
           </label>
         ))}
       </fieldset>
+      <fieldset className="seg-pick">
+        <legend className="field-label">속도</legend>
+        {(Object.keys(SPEED_LABEL) as SpeedClass[]).map((s) => (
+          <label key={s} className={speed === s ? 'is-on' : undefined}>
+            <input type="radio" name="speed" value={s} checked={speed === s} onChange={() => setSpeed(s)} />
+            <span>{SPEED_LABEL[s]}</span>
+          </label>
+        ))}
+      </fieldset>
       <label className="toggle">
         <input type="checkbox" checked={locked} onChange={(e) => setLocked(e.target.checked)} />
-        <span>비밀 방으로 만들기</span>
+        <span>비밀 방</span>
       </label>
       {locked && (
         <label className="field">
           <span className="field-label">비밀번호</span>
-          <input type="password" value={password} maxLength={20} onChange={(e) => setPassword(e.target.value)} placeholder="입장할 때 필요해요" />
+          <input type="password" value={password} maxLength={20} onChange={(e) => setPassword(e.target.value)} />
         </label>
       )}
       <div className="btn-row">
@@ -150,7 +171,7 @@ export default function LobbyScreen() {
             <span className="pitwall-me">{o.name}</span>
           </div>
           {o.rooms.length === 0 ? (
-            <p className="tower-empty">아직 열린 방이 없어요. 첫 방을 만들고 친구를 불러 보세요.</p>
+            <p className="tower-empty">열린 방이 없어요</p>
           ) : (
             <ul className="tower" aria-label="열린 방">
               {o.rooms.map((r) => (
@@ -170,7 +191,7 @@ export default function LobbyScreen() {
       )}
       {o.status === 'closed' && (
         <p className="notice" role="status">
-          서버와 연결이 끊겼어요. 다시 연결하는 중이에요.
+          서버 연결이 끊겼어요
         </p>
       )}
     </section>

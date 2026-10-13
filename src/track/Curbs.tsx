@@ -1,10 +1,8 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import { Color, ExtrudeGeometry, Object3D, Shape, type InstancedMesh } from 'three'
-import { CURB_OFFSET, offsetPoints } from './trackData'
+import { CURB_OFFSET, currentMap, offsetPoints } from './trackData'
 
 const CURB_SEGMENT = 1.5
-const RED = new Color('#d32f2f')
-const WHITE = new Color('#f4f4f4')
 
 /** 연석 단면: 도로 쪽은 낮게 비스듬히, 바깥쪽은 둥글게 솟은 형태. side = 도로 반대쪽 방향(+1: +x) */
 function curbGeometry(length: number, side: 1 | -1) {
@@ -35,12 +33,13 @@ function CurbSide({ offset }: { offset: number }) {
   useLayoutEffect(() => {
     const mesh = ref.current!
     const dummy = new Object3D()
+    const [colorA, colorB] = currentMap.theme.curbs.map((col) => new Color(col))
     segments.forEach((s, i) => {
       dummy.position.set(s.position.x, s.position.y + 0.035, s.position.z)
       dummy.rotation.set(...s.rotation)
       dummy.updateMatrix()
       mesh.setMatrixAt(i, dummy.matrix)
-      mesh.setColorAt(i, i % 2 ? RED : WHITE)
+      mesh.setColorAt(i, i % 2 ? colorA : colorB)
     })
     mesh.instanceMatrix.needsUpdate = true
     mesh.instanceColor!.needsUpdate = true

@@ -3,14 +3,26 @@ import { useMemo, useRef } from 'react'
 import { Object3D, type DirectionalLight } from 'three'
 import { kartState } from '../game/kartState'
 
-const OFFSET = { x: 40, y: 60, z: 28 } // 카트 기준 태양 방향
 const RANGE = 45 // 그림자 범위 (±m)
 
 /**
  * 넓어진 트랙 전체에 그림자를 깔면 해상도가 떨어지므로
  * 그림자 카메라가 카트 주변만 따라다니게 한다.
  */
-export default function SunLight() {
+type SunLightProps = {
+  /** 태양 방향 (하늘의 해 위치와 맞춘다 — 그림자 방향) */
+  direction: [number, number, number]
+  color: string
+  intensity: number
+}
+
+export default function SunLight({ direction, color, intensity }: SunLightProps) {
+  // 카트 기준 태양 위치: 방향을 75m 길이로
+  const offset = useMemo(() => {
+    const [x, y, z] = direction
+    const len = Math.hypot(x, y, z) || 1
+    return { x: (x / len) * 75, y: Math.max(20, (y / len) * 75), z: (z / len) * 75 }
+  }, [direction])
   const light = useRef<DirectionalLight>(null)
   const target = useMemo(() => new Object3D(), [])
 
@@ -23,7 +35,7 @@ export default function SunLight() {
     const x = Math.round(p.x / texel) * texel
     const z = Math.round(p.z / texel) * texel
     target.position.set(x, p.y, z)
-    l.position.set(x + OFFSET.x, p.y + OFFSET.y, z + OFFSET.z)
+    l.position.set(x + offset.x, p.y + offset.y, z + offset.z)
     target.updateMatrixWorld()
   })
 
@@ -34,7 +46,8 @@ export default function SunLight() {
         ref={light}
         target={target}
         castShadow
-        intensity={1.6}
+        color={color}
+        intensity={intensity}
         shadow-mapSize={[2048, 2048]}
         shadow-camera-left={-RANGE}
         shadow-camera-right={RANGE}
