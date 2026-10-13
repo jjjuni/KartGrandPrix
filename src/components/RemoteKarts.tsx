@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import { Body, Box, Vec3 } from 'cannon-es'
 import { createRef, useEffect, useMemo, useRef, useState } from 'react'
 import { Quaternion, Vector3, type Group } from 'three'
+import { crashSound } from '../game/sound'
 import { online, peers, sendHit, subscribe, type Vehicle } from '../net/online'
 import { useWorld } from '../physics/PhysicsWorld'
 import { KART } from '../physics/vehicle'
@@ -94,6 +95,7 @@ function RemoteKart({ id, name, vehicle }: { id: number; name: string; vehicle: 
       last = now
       const push = closing * HIT_SHARE
       sendHit(id, (dx / len) * push, (dz / len) * push)
+      crashSound(closing)
     })
     return b
   }, [id])

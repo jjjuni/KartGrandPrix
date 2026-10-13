@@ -1,5 +1,4 @@
 import { useState, type FormEvent } from 'react'
-import { unlockAudio } from '../game/sound'
 import { enterWithName } from '../net/online'
 import { useOnline } from './hooks'
 
@@ -15,7 +14,6 @@ export default function EntryScreen() {
   const submit = (e: FormEvent) => {
     e.preventDefault()
     if (!trimmed) return
-    unlockAudio() // 이 클릭 이후로 출발 신호음을 낼 수 있다
     enterWithName(trimmed)
   }
 

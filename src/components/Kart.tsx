@@ -11,6 +11,7 @@ import {
   type PerspectiveCamera,
 } from 'three'
 import { kartState } from '../game/kartState'
+import { crashSound, stopDriveSound, updateDriveSound } from '../game/sound'
 import { useControls } from '../hooks/useControls'
 import { canDrive, pressForward, takeStartBoost, updateLap } from '../game/race'
 import { onHit, onSpawn, sendFinish } from '../net/online'
@@ -65,6 +66,7 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
     onHit((vx, vz) => {
       kart.body.velocity.x += vx
       kart.body.velocity.z += vz
+      crashSound(Math.hypot(vx, vz) * 2)
     })
     // 방에 들어가면 서버가 정해 준 출발 그리드 칸으로 (다른 사람과 겹치지 않게), 대기실로 돌아가면 0번 칸
     onSpawn((slot) => {
@@ -75,6 +77,7 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
     return () => {
       onHit(null)
       onSpawn(null)
+      stopDriveSound()
       kart.dispose()
       kartRef.current = null
     }
@@ -229,6 +232,9 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
     s.skid = kart.wheels.reduce((bits, w, i) => (isSkidding(w) ? bits | (1 << i) : bits), 0)
     s.offRoad = kart.offRoadWheels >= 2
     s.airborne = kart.groundedWheels === 0
+    updateDriveSound(s.speedKmh, kart.input.forward, kart.boostKind, kart.groundedWheels >= 2 ? kart.rearSlide : 0, isBike.current)
+    crashSound(kart.wallImpact)
+    kart.wallImpact = 0
     const boosting = kart.boostTime > 0
 
     // ---- 이펙트: 드리프트 불꽃(뒷바퀴가 실제로 미끄러질 때), 부스터 화염 ----

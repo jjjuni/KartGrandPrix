@@ -1,6 +1,7 @@
 import { Canvas, useFrame } from '@react-three/fiber'
 import { Sky } from '@react-three/drei'
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { Group } from 'three'
 import ContactMaterials from './components/ContactMaterials'
 import Ground from './components/Ground'
 import Hud from './components/Hud'
@@ -23,6 +24,16 @@ import ResultsBoard from './ui/ResultsBoard'
 import RoomPanel from './ui/RoomPanel'
 import VehiclePicker from './ui/VehiclePicker'
 import { useOnline } from './ui/hooks'
+
+/**
+ * 하늘 상자(한 변 1000m)를 카메라에 붙여 둔다. 원점에 두면 원점에서 먼 곳을 달릴 때
+ * 반대쪽 면이 그리기 거리(900m) 밖으로 잘려서 그 자리에 배경색(안개색)이 크게 보인다
+ */
+function FollowCamera({ children }: { children: ReactNode }) {
+  const group = useRef<Group>(null)
+  useFrame(({ camera }) => group.current?.position.copy(camera.position))
+  return <group ref={group}>{children}</group>
+}
 
 /** 새 장면이 몇 프레임 그려진 뒤(셰이더 컴파일까지) 알린다 */
 function SceneReady({ onReady }: { onReady: () => void }) {
@@ -64,7 +75,9 @@ export default function App() {
       <Canvas shadows camera={{ position: [start[0], start[1] + 4, start[2] - 10], fov: 60, far: 900 }}>
         <color attach="background" args={[theme.fog.color]} />
         <fog attach="fog" args={[theme.fog.color, theme.fog.near, theme.fog.far]} />
-        <Sky sunPosition={theme.sky.sun} turbidity={theme.sky.turbidity} rayleigh={theme.sky.rayleigh} />
+        <FollowCamera>
+          <Sky sunPosition={theme.sky.sun} turbidity={theme.sky.turbidity} rayleigh={theme.sky.rayleigh} />
+        </FollowCamera>
         <hemisphereLight args={[theme.hemisphere.sky, theme.hemisphere.ground, theme.hemisphere.intensity]} />
         <SunLight direction={theme.sky.sun} color={theme.sun.color} intensity={theme.sun.intensity} />
         <Suspense fallback={null}>

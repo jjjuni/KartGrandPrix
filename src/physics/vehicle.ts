@@ -340,6 +340,8 @@ export class KartPhysics {
   offRoadWheels = 0
   /** 이번 스텝에 벽에 닿아 있는지 */
   touchingWall = false
+  /** 지난번 읽은 뒤 가장 세게 벽에 부딪힌 세기 (줄어든 속도 m/s) — 충돌 소리용, 읽는 쪽이 0으로 되돌린다 */
+  wallImpact = 0
 
   /** surfaceAt: 위치의 노면 판정 (기본: 전부 도로) — track/surface.ts의 createSurfaceTracker() */
   constructor(
@@ -732,6 +734,7 @@ export class KartPhysics {
       }
     }
     this.touchingWall = wallNormal !== null
+    this.wallImpact = Math.max(this.wallImpact, impact)
     if (wallNormal) {
       // 벽을 따라가는(접선) 수평 속도
       const vn = vel.x * wallNormal.x + vel.z * wallNormal.z
