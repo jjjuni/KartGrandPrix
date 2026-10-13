@@ -79,6 +79,19 @@ export default function Ground() {
             }
             return
           }
+          if (style === 'rock') {
+            for (let i = 0; i < 80; i++) {
+              ctx.fillStyle = rand() > 0.5 ? 'rgba(20,16,12,0.25)' : 'rgba(120,105,90,0.2)'
+              ctx.beginPath()
+              ctx.ellipse(rand() * w, rand() * h, 4 + rand() * 16, 3 + rand() * 10, rand() * Math.PI, 0, Math.PI * 2)
+              ctx.fill()
+            }
+            for (let i = 0; i < 300; i++) {
+              ctx.fillStyle = rand() > 0.85 ? 'rgba(255,200,90,0.9)' : 'rgba(170,160,150,0.6)'
+              ctx.fillRect(rand() * w, rand() * h, 1, 1)
+            }
+            return
+          }
           if (style === 'snow') {
             // 눈: 푸른 그늘 얼룩 + 반짝이는 알갱이
             for (let i = 0; i < 60; i++) {

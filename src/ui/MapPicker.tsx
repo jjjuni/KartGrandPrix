@@ -8,11 +8,22 @@ const PAD = 10
 
 /** 맵의 코스 모양 (미니맵과 같은 방향: x = -월드X, y = -월드Z) — 트랙 전체를 계산하지 않고 제어점 곡선만 */
 function coursePath(id: MapId) {
-  const pts = new CatmullRomCurve3(
+  const curve = new CatmullRomCurve3(
     MAPS[id].controlPoints.map(([x, z]) => new Vector3(-x, 0, -z)),
     true,
     'centripetal',
-  ).getSpacedPoints(160)
+  )
+  const pts = curve.getSpacedPoints(160)
+  // 지름길: 갈라지는 · 합류하는 지점(코스 위 s)과 via를 잇는 곡선
+  const sc = MAPS[id].shortcut
+  const len = curve.getLength()
+  const branchPts = sc
+    ? new CatmullRomCurve3(
+        [curve.getPointAt((sc.from / len) % 1), ...sc.via.map(([x, z]) => new Vector3(-x, 0, -z)), curve.getPointAt((sc.to / len) % 1)],
+        false,
+        'centripetal',
+      ).getSpacedPoints(60)
+    : []
   const xs = pts.map((p) => p.x)
   const ys = pts.map((p) => p.z)
   const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]
@@ -20,7 +31,9 @@ function coursePath(id: MapId) {
   const ox = PAD + (SIZE - PAD * 2 - (maxX - minX) * scale) / 2
   const oy = PAD + (SIZE - PAD * 2 - (maxY - minY) * scale) / 2
   const xy = pts.map((p) => [ox + (p.x - minX) * scale, oy + (p.z - minY) * scale])
-  return { d: `M ${xy.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(' L ')} Z`, start: xy[0] }
+  const bxy = branchPts.map((p) => [ox + (p.x - minX) * scale, oy + (p.z - minY) * scale])
+  const branch = bxy.length ? `M ${bxy.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(' L ')}` : ''
+  return { d: `M ${xy.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(' L ')} Z`, branch, start: xy[0] }
 }
 
 /** 미니맵 아래 "맵 선택" 버튼 + 맵 카드 그리드 모달 (방장 · 출발 전에만) */
@@ -47,7 +60,7 @@ export default function MapPicker({ current }: { current: MapId }) {
           맵 선택
         </h2>
         <ul className="map-list">
-          {courses.map(({ id, d, start }) => (
+          {courses.map(({ id, d, branch, start }) => (
             <li key={id}>
               <button
                 type="button"
@@ -59,6 +72,7 @@ export default function MapPicker({ current }: { current: MapId }) {
                 <svg viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden="true" style={{ background: `color-mix(in srgb, ${MAPS[id].theme.ground.b} 45%, transparent)` }}>
                   <path d={d} className="minimap-edge" strokeWidth={6} />
                   <path d={d} className="minimap-road" strokeWidth={4} />
+                  {branch && <path d={branch} className="minimap-road" strokeWidth={2.5} />}
                   <circle cx={start[0]} cy={start[1]} r={3.5} className="map-start-dot" />
                 </svg>
                 <span>{MAPS[id].name}</span>

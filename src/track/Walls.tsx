@@ -1,9 +1,32 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
-import { Color, DoubleSide, ExtrudeGeometry, Matrix4, PlaneGeometry, Quaternion, Shape, Vector3, type InstancedMesh } from 'three'
+import {
+  Color,
+  DoubleSide,
+  ExtrudeGeometry,
+  Matrix4,
+  PlaneGeometry,
+  Quaternion,
+  Shape,
+  Vector3,
+  type InstancedMesh,
+} from 'three'
 import { useWorld } from '../physics/PhysicsWorld'
 import { WALL_COLLIDER_HEIGHT, WALL_THICKNESS, createWallBodies, wallTransform } from '../physics/trackBodies'
 import { makeCanvasTexture } from '../utils/canvasTexture'
-import { WALL_OFFSET, currentMap, offsetPoints } from './trackData'
+import { terrainHeightAt } from './terrain'
+import {
+  BRANCH_WIDTH,
+  CAVE,
+  ROAD_WIDTH,
+  WALL_OFFSET,
+  branchFrames,
+  branchPoints,
+  branchWallOffset,
+  centerPoints,
+  currentMap,
+  offsetPoints,
+  type Segment,
+} from './trackData'
 
 const WALL_SEGMENT = 3
 const WALL_HEIGHT = 0.9 // 보이는 높이 (충돌 높이는 WALL_COLLIDER_HEIGHT로 더 높음 — 튀어서 넘어가지 못하게)
@@ -58,8 +81,65 @@ function makeFenceTexture() {
  * 트랙 바깥 방벽. 물리는 세그먼트 박스를 여러 개씩 묶은 정적 body,
  * 화면은 InstancedMesh(방호벽 · 철망 · 기둥)로 수백 개의 세그먼트를 적은 draw call로 그린다.
  */
-function WallSide({ offset, fence }: { offset: number; fence: ReturnType<typeof makeFenceTexture> }) {
-  const segments = useMemo(() => offsetPoints(offset, WALL_SEGMENT), [offset])
+/** 다른 길 위에 놓인 방벽 조각은 빼서 갈림길을 연다 (높이 차가 큰 입체 교차의 위 · 아래 길은 그대로) */
+export function openJunctions(segments: Segment[]) {
+  if (!branchPoints.length) return segments
+  const roads = [
+    { points: centerPoints, half: ROAD_WIDTH / 2 + 1.5 },
+    { points: branchPoints, half: BRANCH_WIDTH / 2 + 1.5 },
+  ]
+  return segments.filter(
+    ({ position: s }) =>
+      !roads.some(({ points, half }) =>
+        points.some((p) => Math.abs(p.y - s.y) < 4 && (p.x - s.x) ** 2 + (p.z - s.z) ** 2 < half * half),
+      ),
+  )
+}
+
+/**
+ * 동굴 맵의 낭떠러지: 방벽 바깥 4m의 땅이 4m 넘게 꺼져 있으면 그 조각은 세우지 않는다 (떨어질 수 있게).
+ * 동굴 맵만 — 다른 맵의 다리(입체 교차) 옆은 아래 길로 떨어지지 않게 그대로 둔다
+ */
+function openCliffs(segments: Segment[], offset: number) {
+  if (!CAVE) return segments
+  const side = Math.sign(offset)
+  return segments.filter(({ position: p, yaw }) => {
+    // 세그먼트 진행 방향 (sin yaw, cos yaw)의 왼쪽 = (cos yaw, -sin yaw), 여기에 offset 부호를 곱하면 바깥쪽
+    const x = p.x + Math.cos(yaw) * side * 4
+    const z = p.z - Math.sin(yaw) * side * 4
+    return terrainHeightAt(x, z) > p.y - 4
+  })
+}
+
+function WallSide({
+  offset,
+  fence,
+  branch = false,
+}: {
+  offset: number
+  fence: ReturnType<typeof makeFenceTexture>
+  branch?: boolean
+}) {
+  const segments = useMemo(
+    () =>
+      openJunctions(
+        openCliffs(
+          branch
+            ? // 지름길이 낭떠러지를 건너는 구간(양 끝보다 10m 넘게 낮은 곳)에는 방벽을 세우지 않는다
+              offsetPoints(offset, WALL_SEGMENT, branchPoints, branchFrames, false).filter(
+                (s) => s.position.y > Math.min(branchPoints[0].y, branchPoints[branchPoints.length - 1].y) - 10,
+              )
+            : offsetPoints(offset, WALL_SEGMENT),
+          offset,
+        ),
+      ),
+    [offset, branch],
+  )
+  // 낭떠러지 · 갈림길로 조각이 모두 빠진 쪽은 그리지 않는다 (빈 인스턴스는 색 버퍼가 없어 오류)
+  return segments.length ? <WallBody segments={segments} fence={fence} /> : null
+}
+
+function WallBody({ segments, fence }: { segments: Segment[]; fence: ReturnType<typeof makeFenceTexture> }) {
   // 경사 구간은 세그먼트가 조금 더 길다 → 가장 긴 값 기준 + 틈 방지 여유
   const length = Math.max(...segments.map((s) => s.length)) + 0.15
 
@@ -100,7 +180,9 @@ function WallSide({ offset, fence }: { offset: number; fence: ReturnType<typeof 
       fenceRef.current!.setMatrixAt(i, m)
 
       if (i % POST_EVERY === 0) {
-        ahead.set(0, WALL_HEIGHT - WALL_COLLIDER_HEIGHT / 2 + FENCE_HEIGHT / 2 + 0.05, -seg.length / 2).applyQuaternion(quat)
+        ahead
+          .set(0, WALL_HEIGHT - WALL_COLLIDER_HEIGHT / 2 + FENCE_HEIGHT / 2 + 0.05, -seg.length / 2)
+          .applyQuaternion(quat)
         m.compose(pos.clone().add(ahead), quat, one)
         postRef.current!.setMatrixAt(i / POST_EVERY, m)
       }
@@ -131,6 +213,12 @@ export default function Walls() {
     <>
       <WallSide offset={WALL_OFFSET} fence={fence} />
       <WallSide offset={-WALL_OFFSET} fence={fence} />
+      {branchPoints.length > 0 && (
+        <>
+          <WallSide offset={branchWallOffset()} fence={fence} branch />
+          <WallSide offset={-branchWallOffset()} fence={fence} branch />
+        </>
+      )}
     </>
   )
 }

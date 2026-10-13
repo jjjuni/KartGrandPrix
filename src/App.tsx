@@ -75,9 +75,12 @@ export default function App() {
       <Canvas shadows camera={{ position: [start[0], start[1] + 4, start[2] - 10], fov: 60, far: 900 }}>
         <color attach="background" args={[theme.fog.color]} />
         <fog attach="fog" args={[theme.fog.color, theme.fog.near, theme.fog.far]} />
-        <FollowCamera>
-          <Sky sunPosition={theme.sky.sun} turbidity={theme.sky.turbidity} rayleigh={theme.sky.rayleigh} />
-        </FollowCamera>
+        {/* 동굴 맵은 하늘이 보이지 않는다 (배경 = 어두운 안개색) */}
+        {!MAPS[mapId ?? wanted].cave && (
+          <FollowCamera>
+            <Sky sunPosition={theme.sky.sun} turbidity={theme.sky.turbidity} rayleigh={theme.sky.rayleigh} />
+          </FollowCamera>
+        )}
         <hemisphereLight args={[theme.hemisphere.sky, theme.hemisphere.ground, theme.hemisphere.intensity]} />
         <SunLight direction={theme.sky.sun} color={theme.sun.color} intensity={theme.sun.intensity} />
         <Suspense fallback={null}>

@@ -18,7 +18,7 @@ import { onHit, onSpawn, sendFinish } from '../net/online'
 import { useWorld } from '../physics/PhysicsWorld'
 import { KART, KartPhysics } from '../physics/vehicle'
 import { createSurfaceTracker } from '../track/surface'
-import { WALL_OFFSET, centerPoints, gridPose, nearestSample, poseAt } from '../track/trackData'
+import { WALL_OFFSET, branchDistance, branchWallOffset, ceilingAt, centerPoints, gridPose, nearestSample, poseAt } from '../track/trackData'
 import { useOnline } from '../ui/hooks'
 import BikeModel from './BikeModel'
 import KartModel from './KartModel'
@@ -63,6 +63,31 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
     const kart = new KartPhysics(world, position, yaw, createSurfaceTracker())
     kartRef.current = kart
     // 온라인 상대가 나를 들이받으면 그만큼 밀려난다
+    // 동굴 천장: 물리 스텝마다 검사해 뚫고 나가지 않고 부딪혀 아래로 튕겨 떨어지게 (가까운 중심선 샘플은 프레임마다 갱신)
+    const ceilingHit = () => {
+      const b = kart.body
+      // 천장은 바로 아래 길 기준: 높이를 보지 않는 수평 거리로 가까운 샘플 (프레임마다 찾은 샘플 근처에서)
+      const n = centerPoints.length
+      let index = game.current.nearIndex
+      let best = Infinity
+      for (let k = -40; k <= 40; k++) {
+        const i = (game.current.nearIndex + k + n) % n
+        const p = centerPoints[i]
+        const d = (p.x - b.position.x) ** 2 + (p.z - b.position.z) ** 2
+        if (d < best) {
+          best = d
+          index = i
+        }
+      }
+      const ceiling = ceilingAt(b.position.x, b.position.z, index) - 0.6
+      if (b.position.y <= ceiling) return
+      b.position.y = ceiling
+      if (b.velocity.y > 0) {
+        crashSound(b.velocity.y)
+        b.velocity.y *= -0.3
+      }
+    }
+    world.addEventListener('postStep', ceilingHit)
     onHit((vx, vz) => {
       kart.body.velocity.x += vx
       kart.body.velocity.z += vz
@@ -77,6 +102,7 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
     return () => {
       onHit(null)
       onSpawn(null)
+      world.removeEventListener('postStep', ceilingHit)
       stopDriveSound()
       kart.dispose()
       kartRef.current = null
@@ -94,7 +120,7 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
   const flame = useRef<Group>(null)
   const steer = useRef(0) // KartModel의 핸들·운전자 기울기용
 
-  const game = useRef({ prevReset: false, prevForward: false, flippedTime: 0, offTrackTime: 0, camYaw: yaw })
+  const game = useRef({ prevReset: false, prevForward: false, flippedTime: 0, offTrackTime: 0, camYaw: yaw, nearIndex: 0 })
 
   // 타이어 자국용 바퀴 상태 (매 프레임 같은 객체를 채워서 돌려준다)
   const markWheels = useRef<MarkWheel[]>(
@@ -167,8 +193,10 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
     const nearest = nearestSample(b.position.x, b.position.z, b.position.y)
     // 바퀴 세기 — 마지막 바퀴를 마친 순간 서버에 도착을 알린다 (기록은 서버가 잰다)
     if (updateLap(nearest.index, centerPoints.length)) sendFinish()
-    g.offTrackTime = nearest.distance > WALL_OFFSET + 1.5 ? g.offTrackTime + delta : 0
+    const offTrack = nearest.distance > WALL_OFFSET + 1.5 && branchDistance(b.position.x, b.position.z) > branchWallOffset() + 1.5
+    g.offTrackTime = offTrack ? g.offTrackTime + delta : 0
     // R은 주행 중에만 (대기 · 카운트다운 · 완주 후에는 막는다)
+    g.nearIndex = nearest.index
     const resetPressed = c.reset && !g.prevReset && canDrive()
     g.prevReset = c.reset
     if (

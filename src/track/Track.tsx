@@ -1,4 +1,5 @@
 import Bridge from './Bridge'
+import Cave from './Cave'
 import Cones from './Cones'
 import Curbs from './Curbs'
 import Grandstand from './Grandstand'
@@ -22,6 +23,7 @@ export default function Track() {
       <Walls />
       <Bridge />
       <Tunnel />
+      <Cave />
       <StartLine />
       <Grandstand />
       <Cones />

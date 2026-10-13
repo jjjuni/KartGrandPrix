@@ -58,6 +58,50 @@ export let ICE_RANGES: [number, number, 1 | -1][] = []
 /** 터널 구간 [시작 s, 끝 s] (m) — 없으면 null */
 export let TUNNEL: [number, number] | null = null
 
+/** 동굴 맵의 굴 크기 [s(m), 반폭(m), 천장 높이(m)] 과 큰 동굴 (중심 · 반지름 m, 바닥 · 천장 절대 높이) — 동굴 맵이 아니면 null */
+export let CAVE: { size: [number, number, number][]; dome: { x: number; z: number; radius: number; floor: number; top: number } | null } | null = null
+
+/** 주행 거리 s(m) 위치의 굴 반폭 · 천장 높이 (키 사이는 코사인 보간, 한 바퀴 이어짐) */
+export function caveSizeAt(s: number) {
+  const keys = CAVE!.size
+  const w = wrapS(s)
+  for (let k = 0; k < keys.length; k++) {
+    const [s0, h0, c0] = keys[k]
+    const [s1, h1, c1] = k + 1 < keys.length ? keys[k + 1] : [TRACK_LENGTH, keys[0][1], keys[0][2]]
+    if (w >= s0 && w <= s1) {
+      const t = (1 - Math.cos((Math.PI * (w - s0)) / Math.max(1e-6, s1 - s0))) * 0.5
+      return { half: h0 + (h1 - h0) * t, height: c0 + (c1 - c0) * t }
+    }
+  }
+  return { half: keys[0][1], height: keys[0][2] }
+}
+
+/**
+ * (x, z)의 동굴 천장 높이 (동굴 맵이 아니면 Infinity). index = 가까운 중심선 샘플.
+ * 굴: 반타원 단면 (가운데가 가장 높다) / 큰 동굴 안: 돔 높이
+ */
+export function ceilingAt(x: number, z: number, index: number) {
+  if (!CAVE) return Infinity
+  const p = centerPoints[index]
+  const { left } = frames[index]
+  const { half, height } = caveSizeAt(index * SAMPLE_SPACING)
+  const u = Math.min(1, Math.abs((x - p.x) * left.x + (z - p.z) * left.z) / half)
+  let top = p.y + height * Math.sqrt(1 - u * u)
+  const d = CAVE.dome
+  if (d) {
+    const r = Math.hypot(x - d.x, z - d.z) / d.radius
+    if (r < 1) top = Math.max(top, d.floor + (d.top - d.floor) * Math.sqrt(1 - r * r))
+  }
+  return top
+}
+
+/** 지름길(갈래길) 중심선 샘플 · 방향 · 폭 — 없는 맵은 빈 배열. 양 끝은 본 코스 중심선 위 */
+export let branchPoints: Vector3[] = []
+export let branchFrames: { tangent: Vector3; left: Vector3 }[] = []
+export let BRANCH_WIDTH = 0
+/** 지름길 방벽 위치 (도로 가장자리 밖 여유는 본 코스와 같게) */
+export const branchWallOffset = () => BRANCH_WIDTH / 2 + (WALL_OFFSET - ROAD_WIDTH / 2)
+
 /** 코스가 차지하는 범위 (중심선 기준, m) — 지형·장식 배치 범위를 정한다 */
 export let trackBounds = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 }
 
@@ -150,10 +194,10 @@ const _up = new Vector3(0, 1, 0)
 const _right = new Vector3(1, 0, 0)
 
 /** 중심선에서 offset만큼 떨어진 곡선 위의 점들을 같은 간격(spacing)으로 다시 샘플링 (높낮이 포함) */
-export function offsetPoints(offset: number, spacing: number): Segment[] {
-  const raw = centerPoints.map((p, i) => p.clone().addScaledVector(frames[i].left, offset))
+export function offsetPoints(offset: number, spacing: number, points = centerPoints, dirs = frames, closed = true): Segment[] {
+  const raw = points.map((p, i) => p.clone().addScaledVector(dirs[i].left, offset))
   const lengths: number[] = [0]
-  for (let i = 1; i <= raw.length; i++) {
+  for (let i = 1; i <= raw.length - (closed ? 0 : 1); i++) {
     lengths.push(lengths[i - 1] + raw[i - 1].distanceTo(raw[i % raw.length]))
   }
   const total = lengths[lengths.length - 1]
@@ -186,7 +230,7 @@ export function offsetPoints(offset: number, spacing: number): Segment[] {
   return result
 
   function pointAt(d: number) {
-    d = d % total
+    d = closed ? d % total : Math.min(d, total - 1e-6)
     while (lengths[seg + 1] < d) seg = (seg + 1) % raw.length
     while (lengths[seg] > d) seg = 0
     const t = (d - lengths[seg]) / (lengths[seg + 1] - lengths[seg])
@@ -211,6 +255,13 @@ export function nearestSample(x: number, z: number, y?: number) {
   }
   const p = centerPoints[index]
   return { index, distance: Math.hypot(p.x - x, p.z - z) }
+}
+
+/** (x, z)에서 지름길 중심선까지의 수평 거리 (지름길이 없으면 Infinity) */
+export function branchDistance(x: number, z: number) {
+  let min = Infinity
+  for (const p of branchPoints) min = Math.min(min, (p.x - x) ** 2 + (p.z - z) ** 2)
+  return Math.sqrt(min)
 }
 
 /** 샘플 위치에 카트를 놓을 때의 위치·방향 (리셋용) */
@@ -299,6 +350,14 @@ export function loadTrack(id: MapId) {
     return next.clone().sub(prev).dot(f.left)
   })
   TUNNEL = def.tunnel ? [def.tunnel[0] * k, def.tunnel[1] * k] : null
+  const d = def.cave?.dome
+  CAVE = def.cave
+    ? {
+        size: def.cave.size.map(([sv, half, height]) => [sv * k, half, height]),
+        dome: d ? { x: d.at[0] * k, z: d.at[1] * k, radius: d.radius * k, floor: d.floor, top: d.top } : null,
+      }
+    : null
+  buildBranch(def, k)
   startPose = {
     position: centerPoints[startIndex].clone(),
     yaw: Math.atan2(frames[startIndex].tangent.x, frames[startIndex].tangent.z),
@@ -308,6 +367,88 @@ export function loadTrack(id: MapId) {
   const zs = centerPoints.map((p) => p.z)
   trackBounds = { minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) }
   trackVersion++
+}
+
+function smoothstep(e0: number, e1: number, x: number) {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)))
+  return t * t * (3 - 2 * t)
+}
+
+/**
+ * 지름길 중심선: 본 코스 s=from 지점에서 같은 방향으로 갈라져 via를 지나 s=to 지점으로 같은 방향으로 합류.
+ * 높이는 profile(갈라진 곳부터의 거리 → 높이, 코사인 보간)을 따르고, 없으면 두 갈림 지점 높이를 곧게 잇는다
+ */
+function buildBranch(def: MapDef, k: number) {
+  const sc = def.shortcut
+  if (!sc) {
+    branchPoints = []
+    branchFrames = []
+    BRANCH_WIDTH = 0
+    return
+  }
+  const a = indexAtS(sc.from * k)
+  const b = indexAtS(sc.to * k)
+  const lead = 14 // 본 코스와 나란히 달리다 갈라지는 길이 (m)
+  const pa = centerPoints[a].clone().setY(0)
+  const pb = centerPoints[b].clone().setY(0)
+  const curve = new CatmullRomCurve3(
+    [
+      pa,
+      pa.clone().addScaledVector(frames[a].tangent, lead),
+      ...sc.via.map(([x, z]) => new Vector3(x * k, 0, z * k)),
+      pb.clone().addScaledVector(frames[b].tangent, -lead),
+      pb,
+    ],
+    false,
+    'centripetal',
+  )
+  const m = Math.round(curve.getLength() / 0.7)
+  // 양 끝은 늘 본 코스 높이 (profile의 0 · 1 값은 무시하고 갈림 지점 높이로)
+  const length = curve.getLength()
+  const keys: [number, number][] = [
+    [0, centerPoints[a].y],
+    ...(sc.profile ?? []).filter(([d]) => d > 0 && d < length).map(([d, h]): [number, number] => [d / length, h]),
+    [1, centerPoints[b].y],
+  ]
+  const heightAt = (t: number) => {
+    for (let j = 0; j < keys.length - 1; j++) {
+      const [t0, h0] = keys[j]
+      const [t1, h1] = keys[j + 1]
+      if (t <= t1) return h0 + (h1 - h0) * (1 - Math.cos((Math.PI * (t - t0)) / (t1 - t0))) * 0.5
+    }
+    return keys[keys.length - 1][1]
+  }
+  branchPoints = curve.getSpacedPoints(m).map((p, i) => p.setY(heightAt(i / m)))
+  // 뒤쪽 절반에서 본 코스 옆을 나란히 달리면 높이를 본 코스에 맞춰 간다 — 두 길이 같은 높이로 매끈하게 합류 (앞쪽 점프 구간은 그대로).
+  // 맞출 높이 차를 길 따라 펴서(앞뒤 25m 평균) 갑자기 가팔라지지 않게
+  const fix = branchPoints.map((p, i) => {
+    if (i < m / 2) return 0
+    const near = nearestSample(p.x, p.z)
+    const w = 1 - smoothstep(30, 55, near.distance) // 두 길의 평평한 띠가 맞닿는 거리(약 29m)까지는 완전히 같게
+    return (centerPoints[near.index].y - p.y) * w
+  })
+  const half = Math.round(25 / 0.7)
+  for (let pass = 0; pass < 2; pass++) {
+    const prev = fix.slice()
+    for (let i = Math.floor(m / 2); i <= m; i++) {
+      let sum = 0
+      let cnt = 0
+      for (let j = Math.max(0, i - half); j <= Math.min(m, i + half); j++) {
+        sum += prev[j]
+        cnt++
+      }
+      fix[i] = sum / cnt
+    }
+  }
+  branchPoints.forEach((p, i) => (p.y += fix[i]))
+  branchPoints[m].y = centerPoints[b].y // 합류 지점은 정확히 본 코스 높이
+  branchFrames = branchPoints.map((_, i) => {
+    const next = branchPoints[Math.min(i + 1, m)]
+    const prev = branchPoints[Math.max(i - 1, 0)]
+    const tangent = new Vector3(next.x - prev.x, 0, next.z - prev.z).normalize()
+    return { tangent, left: new Vector3(tangent.z, 0, -tangent.x) }
+  })
+  BRANCH_WIDTH = sc.width
 }
 
 loadTrack('lobby')

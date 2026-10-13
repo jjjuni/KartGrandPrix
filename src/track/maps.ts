@@ -8,7 +8,7 @@
  * - 점프대·낙타등 구간은 높이 프로필이 평평한 직선 위에 둘 것
  */
 
-export type MapId = 'lobby' | 'forest' | 'desert' | 'polar' | 'mountain' | 'rally'
+export type MapId = 'lobby' | 'forest' | 'desert' | 'polar' | 'mountain' | 'rally' | 'mine'
 
 /** 흩어 놓는 장식 종류 (Trees.tsx) */
 export type ScatterKind = 'pine' | 'broadleaf' | 'bush' | 'rock' | 'cactus' | 'redRock' | 'dryBush' | 'snowPine' | 'iceBlock' | 'snowRock' | 'penguin' | 'igloo'
@@ -37,6 +37,21 @@ export type MapDef = {
     iceGrip: number
     ice: [number, number, 1 | -1][]
   }
+  /**
+   * 지름길: 본 코스 s=from에서 갈라져 via(기본 단위 좌표)를 지나 s=to에서 다시 합류하는 좁은 길 (폭 width m).
+   * profile: [갈라진 곳부터의 거리 m, 높이 m] — 없으면 두 갈림 지점 높이를 곧게 잇는다 (양 끝은 늘 본 코스 높이).
+   * from < to, 출발선을 사이에 두지 않을 것 (바퀴 세기)
+   */
+  shortcut?: { from: number; to: number; via: [number, number][]; width: number; profile?: [number, number][] }
+  /**
+   * 동굴 맵: 코스 전체를 바위 굴이 덮는다 (하늘 없음).
+   * size: [s(기본 단위), 굴 반폭(m), 천장 높이(m)] — 사이는 부드럽게 이어진다.
+   * dome: 큰 동굴 하나 (중심 at · 반지름 radius는 기본 단위, floor · top은 절대 높이 m) — 안쪽 바닥은 floor까지 꺼진 낭떠러지
+   */
+  cave?: {
+    size: [number, number, number][]
+    dome?: { at: [number, number]; radius: number; floor: number; top: number }
+  }
   /** 터널 구간 [시작 s, 끝 s] (기본 단위) — 위로 다른 길이 지나가는 입체 교차로 */
   tunnel?: [number, number]
   theme: {
@@ -46,7 +61,7 @@ export type MapDef = {
     hemisphere: { sky: string; ground: string; intensity: number }
     sun: { color: string; intensity: number }
     /** 땅 질감 */
-    ground: { style: 'grass' | 'sand' | 'snow'; a: string; b: string }
+    ground: { style: 'grass' | 'sand' | 'snow' | 'rock'; a: string; b: string }
     /** 도로 포장 (기본 아스팔트). 비포장(dirt)은 흙길 질감에 연석 없음 */
     road?: 'dirt'
     /** 코스 밖 지형 기복 배율 (모래 언덕은 크게) */
@@ -302,6 +317,64 @@ export const MAPS: Record<MapId, MapDef> = {
         { kind: 'dryBush', count: 200 },
       ],
       weather: 'dust',
+      landmark: 'none',
+    },
+  },
+
+  // ---- 광산: 하늘이 없는 동굴 코스 · 좁은 굴과 넓은 동굴이 번갈아 · 큰 동굴의 낭떠러지를 뛰어넘는 지름길 ----
+  mine: {
+    id: 'mine',
+    name: '광산',
+    scale: 2,
+    controlPoints: [
+      [0, -160], [90, -160], [140, -150], [170, -120], [155, -90], [170, -60], [170, -30], [195, 0], [220, 10],
+      [265, 25], [290, 65], [280, 110], [245, 135], [210, 135], [175, 120], [150, 95], [110, 120], [60, 110],
+      [20, 150], [-40, 150], [-90, 110], [-80, 60], [-130, 20], [-150, -40], [-120, -90], [-150, -140],
+      [-100, -175], [-40, -168],
+    ],
+    // 굴을 오르내리다 → 입구(s≈283)에서 큰 동굴 바닥(s≈350)까지 24m를 내리꽂고 → 낭떠러지를 돌아 다시 올라온다
+    profile: [
+      [0, 0], [60, 0], [120, 4], [170, -2], [220, 5], [283, 8], [345, -16], [365, -16], [446, -6], [520, -2], [572, 0],
+      [600, 0], [646, 4], [700, 12], [780, 2], [860, 9], [940, -2], [1020, 6], [1100, 0], [1180, 7], [1260, 0], [1320, 3],
+    ],
+    camelback: null,
+    jumpStart: null,
+    bumps: [],
+    surface: { offGrip: 0.6, offDrag: 120, offRolling: 0.07, iceGrip: 1, ice: [] },
+    // 지름길: 큰 동굴 바닥에서 둔덕을 타고 날아올라 낭떠러지를 건너 맞은편 선반에 내린다 (빨라야 닿는다)
+    shortcut: {
+      from: 352,
+      to: 600,
+      // 선반에 내린 뒤 왼쪽으로 크게 돌아 본 코스와 나란히 합류
+      via: [[240, 35], [236, 65], [226, 100], [219, 117], [203, 125]],
+      width: 13,
+      // 둔덕 꼭대기(88m)에서 날아 32m 낭떠러지를 건너 선반(120m)에 내린다 — 130km/h 이상이어야 닿는다.
+      // 착지 뒤 140m부터 250m까지 완만히 올라 본 코스 높이에 미리 맞춘다 (나란히 붙는 곳에서 높이 차가 없게)
+      profile: [[23, -16], [88, -8], [94, -45], [114, -45], [120, -14], [140, -14], [250, -1]],
+    },
+    cave: {
+      size: [
+        [0, 45, 22], [70, 40, 20], [110, 17, 10], [200, 18, 11], [240, 24, 14], [283, 20, 13], [646, 20, 13], [700, 17, 10],
+        [760, 38, 24], [850, 17, 10], [920, 30, 18], [1000, 17, 10], [1080, 42, 26], [1170, 18, 11], [1260, 26, 15],
+        [1340, 40, 20],
+      ],
+      dome: { at: [225, 70], radius: 110, floor: -45, top: 40 },
+    },
+    theme: {
+      sky: { sun: [60, 80, 40], turbidity: 2, rayleigh: 1 },
+      fog: { color: '#1b1510', near: 40, far: 260 },
+      hemisphere: { sky: '#ffb070', ground: '#2a1d12', intensity: 0.75 },
+      sun: { color: '#ffb36b', intensity: 0.7 },
+      ground: { style: 'rock', a: '#4a4038', b: '#40372f' },
+      road: 'dirt',
+      hills: 0,
+      walls: ['#c98a2b', '#3a3028'],
+      curbs: ['#c98a2b', '#3a3028'],
+      scatter: [
+        { kind: 'rock', count: 160 },
+        { kind: 'redRock', count: 60 },
+      ],
+      weather: 'none',
       landmark: 'none',
     },
   },

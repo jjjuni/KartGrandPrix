@@ -142,6 +142,11 @@ export const KART = {
   airTiltDamping: 1.5, // 피치·롤 회전 감쇠 (1/s)
   airLevel: 6, // 수평으로 세우는 각가속도 (rad/s² per rad)
   airGravity: 7, // 공중에서 더하는 아래 방향 가속도 (m/s²) — 중력 1.7배쯤: 덜 둥둥 뜨고 묵직하게 떨어진다
+  // 착지 흡수: 이 속도(m/s)보다 빠르게 떨어지며 내려앉으면 landingAbsorb초 동안 튕겨 오르는 위 속도를 빠르게 없앤다
+  // (높이 떨어져도 통통 튀지 않게). 둔덕을 넘는 가벼운 착지에는 작동하지 않는다
+  landingImpact: 7,
+  landingAbsorb: 0.4,
+  landingDamp: 25, // 튕겨 오르는 속도를 줄이는 빠르기 (1/s)
 
   // ---- 부스터 ----
   /** Z 부스터: 게이지가 가득 찼을 때 ↑를 누른 상태에서 Z. ↑를 떼면 즉시 끝난다 */
@@ -335,6 +340,8 @@ export class KartPhysics {
   forwardSpeed = 0
   bodySlip = 0
   groundedWheels = 0
+  private wasAirborne = false
+  private landingTime = 0
   rearSlide = 0
   /** 잔디 위 바퀴 수 */
   offRoadWheels = 0
@@ -600,6 +607,22 @@ export class KartPhysics {
       w.load = Math.max(0, fs)
     }
     this.groundedWheels = contacts
+
+    // ---------------- 착지 흡수 ----------------
+    if (contacts > 0 && this.wasAirborne && this.prevVelocity.y < -KART.landingImpact) this.landingTime = KART.landingAbsorb
+    this.wasAirborne = contacts === 0
+    if (this.landingTime > 0 && contacts > 0) {
+      this.landingTime -= dt
+      // 위로 튀어 오르는 속도 중 '오르막을 따라 오르는 데 필요한 만큼'을 넘는 부분만 줄인다 (앞으로 가는 속도는 그대로)
+      const n = tmp.dir.set(0, 0, 0)
+      for (const w of this.wheels) if (w.contact) n.vadd(w.hitNormal, n)
+      n.normalize()
+      if (n.y > 0.3) {
+        const slopeVy = Math.max(0, -(n.x * vel.x + n.z * vel.z) / n.y)
+        const bounce = vel.y - slopeVy
+        if (bounce > 0) vel.y -= bounce * Math.min(1, KART.landingDamp * dt)
+      }
+    }
     this.offRoadWheels = this.wheels.filter((w) => w.contact && w.surface === 'grass').length
 
     // 안티롤바: 같은 축 좌우 눌림 차이만큼 하중을 옮겨 차체 기울기를 줄인다

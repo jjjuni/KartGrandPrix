@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { kartState } from '../game/kartState'
 import { peers } from '../net/online'
 import { peerColor } from './RemoteKarts'
-import { ROAD_WIDTH, centerPoints, frames } from '../track/trackData'
+import { BRANCH_WIDTH, ROAD_WIDTH, branchPoints, centerPoints, frames } from '../track/trackData'
 
 const SIZE = 180
 const PAD = 14
@@ -12,7 +12,7 @@ const PAD = 14
  * 카메라 기준 화면 오른쪽이 월드 -X라서 지도도 x = -월드X, y = -월드Z로 그려 좌우가 뒤집히지 않게 한다.
  */
 export default function Minimap() {
-  const { path, scale, toMap, start } = useMemo(() => {
+  const { path, branch, scale, toMap, start } = useMemo(() => {
     const xs = centerPoints.map((p) => -p.x)
     const ys = centerPoints.map((p) => -p.z)
     const minX = Math.min(...xs)
@@ -32,7 +32,9 @@ export default function Minimap() {
     const l0 = frames[0].left
     const half = ROAD_WIDTH / 2 + 1
     const start = [toMap(p0.x + l0.x * half, p0.z + l0.z * half), toMap(p0.x - l0.x * half, p0.z - l0.z * half)]
-    return { path, scale, toMap, start }
+    const bp = branchPoints.filter((_, i) => i % 4 === 0).map((p) => toMap(p.x, p.z))
+    const branch = bp.length ? `M ${bp.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(' L ')}` : ''
+    return { path, branch, scale, toMap, start }
   }, [])
 
   const marker = useRef<SVGGElement>(null)
@@ -75,6 +77,12 @@ export default function Minimap() {
       <svg viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-label="미니맵">
         <path d={path} className="minimap-edge" strokeWidth={road + 3} />
         <path d={path} className="minimap-road" strokeWidth={road} />
+        {branch && (
+          <>
+            <path d={branch} className="minimap-edge" strokeWidth={Math.max(2, BRANCH_WIDTH * scale) + 3} />
+            <path d={branch} className="minimap-road" strokeWidth={Math.max(2, BRANCH_WIDTH * scale)} />
+          </>
+        )}
         <line x1={start[0][0]} y1={start[0][1]} x2={start[1][0]} y2={start[1][1]} className="minimap-start" />
         <g ref={others} />
         {/* 내 카트는 맨 위에 */}

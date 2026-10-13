@@ -1013,6 +1013,10 @@ kbd.wide {
   background: rgba(141, 110, 99, 0.3);
   color: #e0c3a8;
 }
+.tower-laps.map-mine {
+  background: rgba(201, 138, 43, 0.22);
+  color: #f0b45a;
+}
 .tower-laps.map-polar {
   background: rgba(30, 136, 229, 0.22);
   color: #9fd2ff;

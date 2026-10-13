@@ -20,6 +20,8 @@ import {
   SAMPLE_SPACING,
   TUNNEL,
   WALL_OFFSET,
+  branchDistance,
+  branchWallOffset,
   currentMap,
   nearestSample,
   trackBounds,
@@ -213,6 +215,7 @@ function Scatter({ kind, count, seed }: { kind: Kind; count: number; seed: numbe
       if (isInGrandstand(x, z)) continue
       const near = nearestSample(x, z)
       if (near.distance < kind.clearance + scale) continue // 방벽 안쪽·도로 위 제외
+      if (branchDistance(x, z) < kind.clearance - WALL_OFFSET + branchWallOffset() + scale) continue // 지름길도
       const s = near.index * SAMPLE_SPACING
       if (TUNNEL && near.distance < 80 && s > TUNNEL[0] - 40 && s < TUNNEL[1] + 40) continue // 터널 위 산(Tunnel.tsx)에 묻히지 않게
       list.push({ x, y: terrainHeightAt(x, z) - 0.15, z, scale, rot, tint, tilt })

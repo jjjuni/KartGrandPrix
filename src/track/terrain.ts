@@ -1,8 +1,11 @@
 import {
+  CAVE,
   SAMPLE_SPACING,
   TRACK_LENGTH,
   TUNNEL,
   WALL_OFFSET,
+  branchPoints,
+  branchWallOffset,
   centerPoints,
   currentMap,
   trackBounds,
@@ -20,6 +23,7 @@ export const TERRAIN_ELEMENT = 2 // 격자 간격 (m)
 const MARGIN = 220 // 코스 바깥으로 지형을 더 까는 거리 (m) — 장식 배치 범위 + 지평선
 const ROAD_BAND = WALL_OFFSET + 1.5 // 이 거리까지는 도로 높이 그대로
 const BLEND = 30 // 도로 높이 → 주변 지형으로 넘어가는 거리
+const CLIFF_BLEND = 6 // 동굴 맵의 큰 동굴 안: 길가에서 이 거리 만에 낭떠러지 바닥까지 꺼진다 (깎아지른 벼랑)
 const TUNNEL_BAND = 7 // 터널 구간에서 평평한 띠를 더 넓히는 폭 (m) — 터널 벽(Tunnel.tsx) 바깥까지
 const TUNNEL_COVER = 13.5 // 터널 둘레 지형을 올리는 높이 (m) — Tunnel.tsx의 산 높이와 같게
 
@@ -59,7 +63,7 @@ function buildTerrain(): Terrain {
   const scale = currentMap.theme.hills
   const dunes = currentMap.theme.ground.style === 'sand'
 
-  // 도로 샘플. band = 도로 높이 그대로인 거리, cover = 터널 둔덕 비율 (0~1), s = 길 위 거리
+  // 도로 샘플: 본 코스 + 지름길. band = 도로 높이 그대로인 거리, cover = 터널 둔덕 비율 (0~1), s = 길 위 거리 (지름길은 따로 떨어진 값)
   const samples: { x: number; z: number; y: number; band: number; cover: number; s: number }[] = []
   const cover = (d: number) =>
     TUNNEL ? smoothstep(TUNNEL[0], TUNNEL[0] + 25, d) * (1 - smoothstep(TUNNEL[1] - 25, TUNNEL[1], d)) : 0
@@ -69,6 +73,8 @@ function buildTerrain(): Terrain {
     const d = i * SAMPLE_SPACING
     samples.push({ x: p.x, z: p.z, y: p.y, band: ROAD_BAND + (inTunnel(d) ? TUNNEL_BAND : 0), cover: cover(d), s: d })
   })
+  const branchBand = branchWallOffset() + 1.5
+  branchPoints.forEach((p, i) => samples.push({ x: p.x, z: p.z, y: p.y, band: branchBand, cover: 0, s: 1e6 + i * 0.7 }))
   // 길을 따라 이만큼 떨어진 두 샘플이 겹치면 서로 다른 길(입체 교차) — 같은 길의 오르막 앞뒤는 아님
   const apart = (a: number, b: number) => Math.min(Math.abs(a - b), TRACK_LENGTH - Math.abs(a - b)) > 100
 
@@ -118,8 +124,16 @@ function buildTerrain(): Terrain {
       }
       // 입체 교차: 두 길의 띠가 겹치면 아래 길 높이로 (위 길은 다리 상판이 받친다 — Bridge.tsx)
       for (const p of overlap) if (p.y < roadH - 2 && apart(p.s, bestS)) roadH = p.y
-      const w = smoothstep(0, BLEND, best)
-      heights[i][j] = roadH * (1 - w) + Math.max(hills(x, z, scale, dunes), roadH + TUNNEL_COVER * mound) * w
+      const dome = CAVE?.dome
+      const inDome = !!dome && Math.hypot(x - dome.x, z - dome.z) < dome.radius
+      const w = smoothstep(0, inDome ? CLIFF_BLEND : BLEND, best)
+      // 길에서 먼 곳: 동굴 맵은 굴 바닥이 길 높이를 따르고, 큰 동굴 안은 낭떠러지 바닥까지 꺼진다
+      const far = CAVE
+        ? inDome
+          ? dome!.floor
+          : roadH
+        : Math.max(hills(x, z, scale, dunes), roadH + TUNNEL_COVER * mound)
+      heights[i][j] = roadH * (1 - w) + far * w
       locked[i][j] = best < 0
     }
   }

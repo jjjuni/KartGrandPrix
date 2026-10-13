@@ -1,11 +1,11 @@
 import { useMemo } from 'react'
 import { BufferGeometry, Float32BufferAttribute } from 'three'
 import { makeCanvasTexture, seededRandom } from '../utils/canvasTexture'
-import { ROAD_WIDTH, centerPoints, currentMap, frames } from './trackData'
+import { BRANCH_WIDTH, ROAD_WIDTH, branchFrames, branchPoints, centerPoints, currentMap, frames } from './trackData'
 
 const TEXTURE_LENGTH = 8 // 텍스처 한 장이 덮는 도로 길이 (m)
 /** 맵별 도로 색조 (질감에 곱해진다) */
-const ROAD_TINT = { grass: '#ffffff', sand: '#f2dfc4', snow: '#e4edf7' }
+const ROAD_TINT = { grass: '#ffffff', sand: '#f2dfc4', snow: '#e4edf7', rock: '#d9cfc4' }
 const LIFT = 0.06 // 지면(Heightfield 메시)과 겹쳐 깜빡이지 않도록 살짝 띄움
 
 /** 아스팔트(골재 알갱이 + 보수 자국) + 타이어가 지나는 어두운 주행 라인 + 가장자리 흰 선 + 중앙 점선 */
@@ -115,24 +115,27 @@ function makeDirtTexture() {
   )
 }
 
-/** 중심선을 따라 폭 ROAD_WIDTH인 리본 메시를 생성 (높낮이는 중심선 y를 그대로 따름) */
-function makeRoadGeometry() {
+/** 중심선을 따라 폭 width인 리본 메시를 생성 (높낮이는 중심선 y를 그대로 따름). 지름길은 열린 길 */
+function makeRoadGeometry(points = centerPoints, dirs = frames, width = ROAD_WIDTH, closed = true) {
   const positions: number[] = []
   const uvs: number[] = []
   const indices: number[] = []
-  const n = centerPoints.length
+  const n = points.length
+  const last = closed ? n : n - 1
   let dist = 0
 
-  for (let i = 0; i <= n; i++) {
-    const p = centerPoints[i % n]
-    const { left } = frames[i % n]
-    if (i > 0) dist += centerPoints[i - 1].distanceTo(p)
-    const l = p.clone().addScaledVector(left, ROAD_WIDTH / 2)
-    const r = p.clone().addScaledVector(left, -ROAD_WIDTH / 2)
-    positions.push(l.x, p.y + LIFT, l.z, r.x, p.y + LIFT, r.z)
+  for (let i = 0; i <= last; i++) {
+    const p = points[i % n]
+    const { left } = dirs[i % n]
+    if (i > 0) dist += points[i - 1].distanceTo(p)
+    const l = p.clone().addScaledVector(left, width / 2)
+    const r = p.clone().addScaledVector(left, -width / 2)
+    // 지름길은 살짝 낮게 — 본 코스와 겹치는 갈림목에서 본 코스가 위에 그려지게
+    const lift = closed ? LIFT : LIFT - 0.02
+    positions.push(l.x, p.y + lift, l.z, r.x, p.y + lift, r.z)
     const v = dist / TEXTURE_LENGTH
     uvs.push(0, v, 1, v)
-    if (i < n) {
+    if (i < last) {
       const a = i * 2
       // 위(+Y)를 향하는 면이 되도록 반시계 방향 순서
       indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2)
@@ -148,20 +151,31 @@ function makeRoadGeometry() {
 }
 
 export default function Road() {
-  const geometry = useMemo(makeRoadGeometry, [])
+  const geometry = useMemo(() => makeRoadGeometry(), [])
+  const branch = useMemo(() => (branchPoints.length ? makeRoadGeometry(branchPoints, branchFrames, BRANCH_WIDTH, false) : null), [])
   const dirt = currentMap.theme.road === 'dirt'
   const texture = useMemo(() => (dirt ? makeDirtTexture() : makeRoadTexture()), [dirt])
+  const material = (
+    <meshStandardMaterial
+      map={texture}
+      color={dirt ? '#ffffff' : ROAD_TINT[currentMap.theme.ground.style]}
+      roughness={dirt ? 1 : 0.85}
+      polygonOffset
+      polygonOffsetFactor={-2}
+      polygonOffsetUnits={-2}
+    />
+  )
 
   return (
-    <mesh geometry={geometry} receiveShadow>
-      <meshStandardMaterial
-        map={texture}
-        color={dirt ? '#ffffff' : ROAD_TINT[currentMap.theme.ground.style]}
-        roughness={dirt ? 1 : 0.85}
-        polygonOffset
-        polygonOffsetFactor={-2}
-        polygonOffsetUnits={-2}
-      />
-    </mesh>
+    <>
+      <mesh geometry={geometry} receiveShadow>
+        {material}
+      </mesh>
+      {branch && (
+        <mesh geometry={branch} receiveShadow>
+          {material}
+        </mesh>
+      )}
+    </>
   )
 }

@@ -1,4 +1,4 @@
-import { CURB_OFFSET, centerPoints, frames, isIceAt } from './trackData'
+import { BRANCH_WIDTH, CURB_OFFSET, branchDistance, centerPoints, frames, isIceAt } from './trackData'
 
 /** road: 도로 · grass: 코스 밖(맵에 따라 잔디·모래·눈) · ice: 빙판 구간의 도로 */
 export type Surface = 'road' | 'grass' | 'ice'
@@ -41,7 +41,8 @@ export function createSurfaceTracker() {
       }
     }
     last = bestIndex
-    if (Math.sqrt(best) > ROAD_EDGE) return 'grass'
+    // 본 코스 밖이어도 지름길 위면 도로
+    if (Math.sqrt(best) > ROAD_EDGE) return branchDistance(x, z) <= BRANCH_WIDTH / 2 + 0.4 ? 'road' : 'grass'
     const p = centerPoints[bestIndex]
     const { left } = frames[bestIndex]
     return isIceAt(bestIndex, (x - p.x) * left.x + (z - p.z) * left.z) ? 'ice' : 'road'
