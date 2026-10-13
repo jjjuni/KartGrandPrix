@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react'
 import { BufferGeometry, Float32BufferAttribute } from 'three'
 import { useWorld } from '../physics/PhysicsWorld'
 import { createGroundBody } from '../physics/trackBodies'
+import { tunnelHill } from '../track/Tunnel'
 import { getTerrain, gridX, gridZ } from '../track/terrain'
 import { currentMap } from '../track/trackData'
 import { makeCanvasTexture, seededRandom } from '../utils/canvasTexture'
@@ -116,9 +117,19 @@ export default function Ground() {
     [],
   )
 
+  // 터널 위를 덮는 산 (있는 맵만) — 지면과 같은 질감 좌표
+  const hill = useMemo(() => tunnelHill((x, z) => [x / (STRIPE * 2), z / (STRIPE * 2)]), [])
+
   return (
-    <mesh geometry={geometry} receiveShadow>
-      <meshStandardMaterial map={texture} roughness={1} />
-    </mesh>
+    <>
+      <mesh geometry={geometry} receiveShadow>
+        <meshStandardMaterial map={texture} roughness={1} />
+      </mesh>
+      {hill && (
+        <mesh geometry={hill} castShadow receiveShadow>
+          <meshStandardMaterial map={texture} roughness={1} />
+        </mesh>
+      )}
+    </>
   )
 }

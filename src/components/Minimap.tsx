@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { kartState } from '../game/kartState'
 import { peers } from '../net/online'
 import { peerColor } from './RemoteKarts'
-import { JUMP_LIP, ROAD_WIDTH, centerPoints, frames, indexAtS } from '../track/trackData'
+import { ROAD_WIDTH, centerPoints, frames } from '../track/trackData'
 
 const SIZE = 180
 const PAD = 14
@@ -12,7 +12,7 @@ const PAD = 14
  * 카메라 기준 화면 오른쪽이 월드 -X라서 지도도 x = -월드X, y = -월드Z로 그려 좌우가 뒤집히지 않게 한다.
  */
 export default function Minimap() {
-  const { path, scale, toMap, start, jump } = useMemo(() => {
+  const { path, scale, toMap, start } = useMemo(() => {
     const xs = centerPoints.map((p) => -p.x)
     const ys = centerPoints.map((p) => -p.z)
     const minX = Math.min(...xs)
@@ -32,8 +32,7 @@ export default function Minimap() {
     const l0 = frames[0].left
     const half = ROAD_WIDTH / 2 + 1
     const start = [toMap(p0.x + l0.x * half, p0.z + l0.z * half), toMap(p0.x - l0.x * half, p0.z - l0.z * half)]
-    const pj = centerPoints[indexAtS(JUMP_LIP)]
-    return { path, scale, toMap, start, jump: toMap(pj.x, pj.z) }
+    return { path, scale, toMap, start }
   }, [])
 
   const marker = useRef<SVGGElement>(null)
@@ -77,7 +76,6 @@ export default function Minimap() {
         <path d={path} className="minimap-edge" strokeWidth={road + 3} />
         <path d={path} className="minimap-road" strokeWidth={road} />
         <line x1={start[0][0]} y1={start[0][1]} x2={start[1][0]} y2={start[1][1]} className="minimap-start" />
-        <circle cx={jump[0]} cy={jump[1]} r={3} className="minimap-jump" />
         <g ref={others} />
         {/* 내 카트는 맨 위에 */}
         <g ref={marker}>

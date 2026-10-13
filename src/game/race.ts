@@ -38,7 +38,7 @@ function set(next: Partial<typeof race>) {
   listeners.forEach((fn) => fn())
 }
 
-export const canDrive = () => race.phase === 'racing' && !race.finished
+export const canDrive = () => race.phase === 'lobby' || (race.phase === 'racing' && !race.finished)
 
 const PRE_DELAY = 2000 // 출발을 누른 뒤 첫 신호까지 (ms)
 const BEAT = 1000 // 신호 간격 (ms)

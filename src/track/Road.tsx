@@ -68,6 +68,53 @@ function makeRoadTexture() {
   )
 }
 
+/** 흙길: 다져진 흙 바탕 + 자갈 + 바퀴 자국 두 줄 + 물웅덩이 얼룩 (차선 없음) */
+function makeDirtTexture() {
+  return makeCanvasTexture(
+    512,
+    Math.round((512 * TEXTURE_LENGTH) / ROAD_WIDTH),
+    (ctx, w, h) => {
+      ctx.fillStyle = '#8a6a48'
+      ctx.fillRect(0, 0, w, h)
+      const rand = seededRandom(13)
+      // 색이 다른 흙 얼룩
+      for (let i = 0; i < 26; i++) {
+        const v = rand()
+        ctx.fillStyle = v > 0.5 ? 'rgba(120,90,60,0.35)' : 'rgba(165,130,92,0.3)'
+        ctx.beginPath()
+        ctx.ellipse(rand() * w, rand() * h, 20 + rand() * 60, 8 + rand() * 25, rand() * Math.PI, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      // 바퀴가 다져 놓은 어두운 자국 두 줄 (가장자리는 흐리게)
+      for (const cx of [0.32, 0.68]) {
+        const g = ctx.createLinearGradient(w * (cx - 0.08), 0, w * (cx + 0.08), 0)
+        g.addColorStop(0, 'rgba(70,50,32,0)')
+        g.addColorStop(0.5, 'rgba(70,50,32,0.45)')
+        g.addColorStop(1, 'rgba(70,50,32,0)')
+        ctx.fillStyle = g
+        ctx.fillRect(w * (cx - 0.08), 0, w * 0.16, h)
+      }
+      // 자갈
+      for (let i = 0; i < 5000; i++) {
+        const light = rand() > 0.4
+        const v = light ? 170 + rand() * 60 : 60 + rand() * 30
+        ctx.fillStyle = `rgba(${v},${v * 0.9},${v * 0.78},${light ? 0.55 : 0.6})`
+        const size = 1 + rand() * 2.5
+        ctx.fillRect(rand() * w, rand() * h, size, size)
+      }
+      // 가장자리는 풀과 섞이듯 어둡게
+      for (const [x0, x1] of [[0, 0.06], [1, 0.94]]) {
+        const g = ctx.createLinearGradient(w * x0, 0, w * x1, 0)
+        g.addColorStop(0, 'rgba(90,100,55,0.75)')
+        g.addColorStop(1, 'rgba(90,100,55,0)')
+        ctx.fillStyle = g
+        ctx.fillRect(Math.min(x0, x1) * w, 0, 0.06 * w, h)
+      }
+    },
+    true,
+  )
+}
+
 /** 중심선을 따라 폭 ROAD_WIDTH인 리본 메시를 생성 (높낮이는 중심선 y를 그대로 따름) */
 function makeRoadGeometry() {
   const positions: number[] = []
@@ -102,14 +149,15 @@ function makeRoadGeometry() {
 
 export default function Road() {
   const geometry = useMemo(makeRoadGeometry, [])
-  const texture = useMemo(makeRoadTexture, [])
+  const dirt = currentMap.theme.road === 'dirt'
+  const texture = useMemo(() => (dirt ? makeDirtTexture() : makeRoadTexture()), [dirt])
 
   return (
     <mesh geometry={geometry} receiveShadow>
       <meshStandardMaterial
         map={texture}
-        color={ROAD_TINT[currentMap.theme.ground.style]}
-        roughness={0.85}
+        color={dirt ? '#ffffff' : ROAD_TINT[currentMap.theme.ground.style]}
+        roughness={dirt ? 1 : 0.85}
         polygonOffset
         polygonOffsetFactor={-2}
         polygonOffsetUnits={-2}

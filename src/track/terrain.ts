@@ -1,4 +1,13 @@
-import { WALL_OFFSET, centerPoints, currentMap, trackBounds, trackVersion } from './trackData'
+import {
+  SAMPLE_SPACING,
+  TRACK_LENGTH,
+  TUNNEL,
+  WALL_OFFSET,
+  centerPoints,
+  currentMap,
+  trackBounds,
+  trackVersion,
+} from './trackData'
 
 /**
  * 트랙 전체를 덮는 높이맵.
@@ -11,6 +20,8 @@ export const TERRAIN_ELEMENT = 2 // 격자 간격 (m)
 const MARGIN = 220 // 코스 바깥으로 지형을 더 까는 거리 (m) — 장식 배치 범위 + 지평선
 const ROAD_BAND = WALL_OFFSET + 1.5 // 이 거리까지는 도로 높이 그대로
 const BLEND = 30 // 도로 높이 → 주변 지형으로 넘어가는 거리
+const TUNNEL_BAND = 7 // 터널 구간에서 평평한 띠를 더 넓히는 폭 (m) — 터널 벽(Tunnel.tsx) 바깥까지
+const TUNNEL_COVER = 13.5 // 터널 둘레 지형을 올리는 높이 (m) — Tunnel.tsx의 산 높이와 같게
 
 export type Terrain = {
   heights: number[][] // heights[i][j] — cannon Heightfield의 data 형식과 같다
@@ -48,16 +59,29 @@ function buildTerrain(): Terrain {
   const scale = currentMap.theme.hills
   const dunes = currentMap.theme.ground.style === 'sand'
 
-  // 가까운 중심선 샘플을 빨리 찾기 위한 공간 해시 (10m 칸)
+  // 도로 샘플. band = 도로 높이 그대로인 거리, cover = 터널 둔덕 비율 (0~1), s = 길 위 거리
+  const samples: { x: number; z: number; y: number; band: number; cover: number; s: number }[] = []
+  const cover = (d: number) =>
+    TUNNEL ? smoothstep(TUNNEL[0], TUNNEL[0] + 25, d) * (1 - smoothstep(TUNNEL[1] - 25, TUNNEL[1], d)) : 0
+  // 터널 구간은 띠를 넓혀 터널 벽 바깥까지 평평하게 — 경사가 터널 벽을 뚫고 안으로 보이지 않게 (위는 산 메시가 덮는다)
+  const inTunnel = (d: number) => TUNNEL !== null && d > TUNNEL[0] - 8 && d < TUNNEL[1] + 8
+  centerPoints.forEach((p, i) => {
+    const d = i * SAMPLE_SPACING
+    samples.push({ x: p.x, z: p.z, y: p.y, band: ROAD_BAND + (inTunnel(d) ? TUNNEL_BAND : 0), cover: cover(d), s: d })
+  })
+  // 길을 따라 이만큼 떨어진 두 샘플이 겹치면 서로 다른 길(입체 교차) — 같은 길의 오르막 앞뒤는 아님
+  const apart = (a: number, b: number) => Math.min(Math.abs(a - b), TRACK_LENGTH - Math.abs(a - b)) > 100
+
+  // 가까운 도로 샘플을 빨리 찾기 위한 공간 해시 (10m 칸)
   const CELL = 10
   const buckets = new Map<string, number[]>()
-  centerPoints.forEach((p, idx) => {
+  samples.forEach((p, idx) => {
     const key = `${Math.floor(p.x / CELL)},${Math.floor(p.z / CELL)}`
     const list = buckets.get(key)
     if (list) list.push(idx)
     else buckets.set(key, [idx])
   })
-  const SEARCH = Math.ceil((ROAD_BAND + BLEND) / CELL)
+  const SEARCH = Math.ceil((ROAD_BAND + TUNNEL_BAND + BLEND) / CELL)
 
   const heights: number[][] = []
   const locked: boolean[][] = [] // 도로 구간은 블러에서 제외
@@ -69,26 +93,34 @@ function buildTerrain(): Terrain {
       const z = maxZ - j * TERRAIN_ELEMENT
       const gx = Math.floor(x / CELL)
       const gz = Math.floor(z / CELL)
+      // 도로 띠에서 벗어난 거리(eff)가 가장 작은 샘플을 따른다
       let best = Infinity
       let roadH = 0
+      let mound = 0
+      let bestS = 0
+      const overlap: { y: number; s: number }[] = []
       for (let a = -SEARCH; a <= SEARCH; a++) {
         for (let c = -SEARCH; c <= SEARCH; c++) {
           const list = buckets.get(`${gx + a},${gz + c}`)
           if (!list) continue
           for (const idx of list) {
-            const p = centerPoints[idx]
-            const d = (p.x - x) ** 2 + (p.z - z) ** 2
-            if (d < best) {
-              best = d
+            const p = samples[idx]
+            const eff = Math.sqrt((p.x - x) ** 2 + (p.z - z) ** 2) - p.band
+            if (eff < best) {
+              best = eff
               roadH = p.y
+              mound = p.cover
+              bestS = p.s
             }
+            if (eff < 0) overlap.push(p)
           }
         }
       }
-      const dist = Math.sqrt(best)
-      const w = smoothstep(ROAD_BAND, ROAD_BAND + BLEND, dist)
-      heights[i][j] = roadH * (1 - w) + hills(x, z, scale, dunes) * w
-      locked[i][j] = dist < ROAD_BAND
+      // 입체 교차: 두 길의 띠가 겹치면 아래 길 높이로 (위 길은 다리 상판이 받친다 — Bridge.tsx)
+      for (const p of overlap) if (p.y < roadH - 2 && apart(p.s, bestS)) roadH = p.y
+      const w = smoothstep(0, BLEND, best)
+      heights[i][j] = roadH * (1 - w) + Math.max(hills(x, z, scale, dunes), roadH + TUNNEL_COVER * mound) * w
+      locked[i][j] = best < 0
     }
   }
 

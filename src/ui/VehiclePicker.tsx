@@ -58,7 +58,7 @@ function Preview({ vehicle }: { vehicle: Vehicle }) {
 }
 
 /**
- * 화면 오른쪽 아래 차량 고르기. 대기실에서, 방에서는 ready 전(방장은 출발 전)까지만 보인다
+ * 화면 오른쪽 아래 차량 고르기. 닉네임 · 대기실 화면에서, 방에서는 ready 전(방장은 출발 전)까지만 보인다
  * (서버도 같은 규칙으로 막는다). 고르면 배경의 내 차가 바로 바뀐다.
  */
 export default function VehiclePicker() {
@@ -67,7 +67,7 @@ export default function VehiclePicker() {
   const room = o.room
   const me = room?.members.find((m) => m.id === o.myId)
   const canPick = !room || (r.phase === 'waiting' && (room.hostId === o.myId || !me?.ready))
-  if (!o.name || !canPick) return null
+  if (!canPick) return null
 
   return (
     <fieldset className="vehicle-pick">

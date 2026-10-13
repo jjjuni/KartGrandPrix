@@ -139,9 +139,9 @@ export const KART = {
   gaugeDistance: 110, // 뒷바퀴가 4m/s 이상 옆으로 미끄러지며 이만큼(m) 달리면 게이지가 가득
 
   // ---- 공중 자세 보조 (게임 보조 — 네 바퀴가 모두 떠 있을 때만) ----
-  airYawAlign: 4, // 차체 방향을 진행 방향으로 돌리는 속도 (1/s) — 비스듬히 착지해 타이어가 튀는 것 방지
   airTiltDamping: 1.5, // 피치·롤 회전 감쇠 (1/s)
   airLevel: 6, // 수평으로 세우는 각가속도 (rad/s² per rad)
+  airGravity: 7, // 공중에서 더하는 아래 방향 가속도 (m/s²) — 중력 1.7배쯤: 덜 둥둥 뜨고 묵직하게 떨어진다
 
   // ---- 부스터 ----
   /** Z 부스터: 게이지가 가득 찼을 때 ↑를 누른 상태에서 Z. ↑를 떼면 즉시 끝난다 */
@@ -749,15 +749,14 @@ export class KartPhysics {
     // ---------------- 공중 자세 보조 ----------------
     if (contacts === 0) {
       const av = b.angularVelocity
-      // 요: 차체 방향을 진행 방향으로 (착지 순간 슬립각을 없앤다). 피치·롤: 감쇠
+      // 피치·롤만 감쇠 (요는 건드리지 않는다 — 공중에서 저절로 방향이 바뀌지 않게)
       const kt = Math.max(0, 1 - KART.airTiltDamping * dt)
-      const horizontal = Math.hypot(vel.x, vel.z)
-      const yawTarget = horizontal > 3 ? KART.airYawAlign * clamp(this.bodySlip, -1, 1) : 0
-      av.set(av.x * kt, yawTarget, av.z * kt)
+      av.set(av.x * kt, av.y, av.z * kt)
       // 차체 위 방향을 월드 위 방향으로: 회전축 = up × Y, 크기 = sin(기울기)
       tmp.dir.set(-up.z, 0, up.x) // up × (0,1,0)
       av.x += tmp.dir.x * KART.airLevel * dt
       av.z += tmp.dir.z * KART.airLevel * dt
+      vel.y -= KART.airGravity * dt
     }
 
     // ---------------- 공기저항, 부스터 추진 (무게중심) ----------------

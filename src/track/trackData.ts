@@ -45,9 +45,18 @@ export const JUMP = {
   height: 2.2,
 }
 export let JUMP_LIP = 0
+/** 이 맵에 점프대가 있는지 */
+export let HAS_JUMP = true
+
+/** 울퉁불퉁한 구간 [시작 s, 끝 s] (m) 과 둔덕 높이 */
+export let BUMP_RANGES: [number, number][] = []
+let bumpHeight = 0
 
 /** 빙판 구간 [시작 s, 끝 s] (m) — 이 구간의 도로는 미끄럽다 */
 export let ICE_RANGES: [number, number, 1 | -1][] = []
+
+/** 터널 구간 [시작 s, 끝 s] (m) — 없으면 null */
+export let TUNNEL: [number, number] | null = null
 
 /** 코스가 차지하는 범위 (중심선 기준, m) — 지형·장식 배치 범위를 정한다 */
 export let trackBounds = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 }
@@ -78,6 +87,7 @@ function camelback(s: number) {
 }
 
 function tabletop(s: number) {
+  if (!HAS_JUMP) return 0
   const { start, kickLength, kickPower, topLength, landingLength, height } = JUMP
   const t = s - start
   if (t < 0) return 0
@@ -88,10 +98,25 @@ function tabletop(s: number) {
   return 0
 }
 
+/**
+ * 울퉁불퉁한 구간: 코스 밖 모래 언덕처럼 큰 둔덕이 높이를 바꿔 가며 이어진다 (빠르면 둔덕마다 살짝 뜬다).
+ * 지형 격자(2m)가 따라 그릴 수 있게 파장은 10m 이상, 양 끝은 서서히 시작·끝
+ */
+const BUMP = { height: 0.9, wave: 26, wave2: 61, fade: 15 } // height는 맵에 bumpHeight가 있으면 그 값
+function bumps(s: number) {
+  for (const [a, b] of BUMP_RANGES) {
+    if (s < a || s > b) continue
+    const fade = Math.min(1, (s - a) / BUMP.fade, (b - s) / BUMP.fade)
+    const wave = 0.5 - 0.5 * Math.cos((2 * Math.PI * (s - a)) / BUMP.wave)
+    return bumpHeight * fade * wave * (0.6 + 0.4 * Math.sin((2 * Math.PI * (s - a)) / BUMP.wave2))
+  }
+  return 0
+}
+
 /** 주행 거리 s 위치의 도로 높이 */
 export function roadHeightAt(s: number) {
   const w = wrapS(s)
-  return baseProfile(w) + camelback(w) + tabletop(w)
+  return baseProfile(w) + camelback(w) + tabletop(w) + bumps(w)
 }
 
 // ---------------------------------------------------------------------------
@@ -169,19 +194,23 @@ export function offsetPoints(offset: number, spacing: number): Segment[] {
   }
 }
 
-/** (x, z)에 가장 가까운 중심선 샘플의 인덱스와 수평 거리 */
-export function nearestSample(x: number, z: number) {
+/**
+ * (x, z)에 가장 가까운 중심선 샘플의 인덱스와 수평 거리.
+ * y를 주면 높이 차도 크게 쳐서, 입체 교차(위 · 아래 길이 겹치는 곳)에서 지금 달리는 쪽 길을 고른다
+ */
+export function nearestSample(x: number, z: number, y?: number) {
   let min = Infinity
   let index = 0
   for (let i = 0; i < centerPoints.length; i++) {
     const p = centerPoints[i]
-    const d = (p.x - x) ** 2 + (p.z - z) ** 2
+    const d = (p.x - x) ** 2 + (p.z - z) ** 2 + (y === undefined ? 0 : 9 * (p.y - y) ** 2)
     if (d < min) {
       min = d
       index = i
     }
   }
-  return { index, distance: Math.sqrt(min) }
+  const p = centerPoints[index]
+  return { index, distance: Math.hypot(p.x - x, p.z - z) }
 }
 
 /** 샘플 위치에 카트를 놓을 때의 위치·방향 (리셋용) */
@@ -244,8 +273,11 @@ export function loadTrack(id: MapId) {
   SAMPLE_SPACING = TRACK_LENGTH / SAMPLES
   profileKeys = def.profile.map(([d, h]) => [d * k, h])
   CAMELBACK = def.camelback && { ...def.camelback, center: def.camelback.center * k }
-  JUMP.start = def.jumpStart * k
+  HAS_JUMP = def.jumpStart !== null
+  JUMP.start = (def.jumpStart ?? 0) * k
   JUMP_LIP = JUMP.start + JUMP.kickLength
+  BUMP_RANGES = def.bumps.map(([a, b]) => [a * k, b * k])
+  bumpHeight = def.bumpHeight ?? BUMP.height
   ICE_RANGES = def.surface.ice.map(([a, b, side]) => [a * k, b * k, side])
 
   centerPoints = curve
@@ -266,6 +298,7 @@ export function loadTrack(id: MapId) {
     // 접선이 왼쪽(left)으로 돌아가면 좌회전 코너
     return next.clone().sub(prev).dot(f.left)
   })
+  TUNNEL = def.tunnel ? [def.tunnel[0] * k, def.tunnel[1] * k] : null
   startPose = {
     position: centerPoints[startIndex].clone(),
     yaw: Math.atan2(frames[startIndex].tangent.x, frames[startIndex].tangent.z),
@@ -277,4 +310,4 @@ export function loadTrack(id: MapId) {
   trackVersion++
 }
 
-loadTrack('forest')
+loadTrack('lobby')

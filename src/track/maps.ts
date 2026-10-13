@@ -8,7 +8,7 @@
  * - 점프대·낙타등 구간은 높이 프로필이 평평한 직선 위에 둘 것
  */
 
-export type MapId = 'forest' | 'desert' | 'polar'
+export type MapId = 'lobby' | 'forest' | 'desert' | 'polar' | 'mountain' | 'rally'
 
 /** 흩어 놓는 장식 종류 (Trees.tsx) */
 export type ScatterKind = 'pine' | 'broadleaf' | 'bush' | 'rock' | 'cactus' | 'redRock' | 'dryBush' | 'snowPine' | 'iceBlock' | 'snowRock' | 'penguin' | 'igloo'
@@ -23,10 +23,22 @@ export type MapDef = {
   profile: [number, number][]
   /** 낙타등 언덕 (없으면 null) — center는 기본 단위 s */
   camelback: { center: number; riseLength: number; fallLength: number; height: number } | null
-  /** 점프대 킥 램프 시작 s (기본 단위) */
-  jumpStart: number
+  /** 점프대 킥 램프 시작 s (기본 단위) — 없으면 null */
+  jumpStart: number | null
+  /** 울퉁불퉁한 구간 [시작 s, 끝 s] (기본 단위) — 도로가 연달아 오르내린다 */
+  bumps: [number, number][]
+  /** 둔덕 높이 (m) — 없으면 기본 0.9 */
+  bumpHeight?: number
   /** 노면: 코스 밖(잔디 · 모래 · 눈)의 접지력·저항, 도로 위 빙판 구간 [시작 s, 끝 s] (기본 단위) */
-  surface: { offGrip: number; offDrag: number; offRolling: number; iceGrip: number; ice: [number, number, 1 | -1][] }
+  surface: {
+    offGrip: number
+    offDrag: number
+    offRolling: number
+    iceGrip: number
+    ice: [number, number, 1 | -1][]
+  }
+  /** 터널 구간 [시작 s, 끝 s] (기본 단위) — 위로 다른 길이 지나가는 입체 교차로 */
+  tunnel?: [number, number]
   theme: {
     sky: { sun: [number, number, number]; turbidity: number; rayleigh: number }
     /** 배경 · 안개 색, 안개가 시작·끝나는 거리 (m) */
@@ -35,6 +47,8 @@ export type MapDef = {
     sun: { color: string; intensity: number }
     /** 땅 질감 */
     ground: { style: 'grass' | 'sand' | 'snow'; a: string; b: string }
+    /** 도로 포장 (기본 아스팔트). 비포장(dirt)은 흙길 질감에 연석 없음 */
+    road?: 'dirt'
     /** 코스 밖 지형 기복 배율 (모래 언덕은 크게) */
     hills: number
     walls: [string, string]
@@ -47,6 +61,39 @@ export type MapDef = {
 }
 
 export const MAPS: Record<MapId, MapDef> = {
+  // ---- 대기실: 둥근 타원 연습 코스 (방에서는 고를 수 없음) ----
+  lobby: {
+    id: 'lobby',
+    name: '연습장',
+    scale: 1,
+    controlPoints: [
+      [0, -70], [100, -70], [149.5, -49.5], [170, 0], [149.5, 49.5], [100, 70], [0, 70], [-100, 70], [-149.5, 49.5],
+      [-170, 0], [-149.5, -49.5], [-100, -70],
+    ],
+    profile: [[0, 0]],
+    camelback: null,
+    jumpStart: 370, // 위쪽 직선
+    bumps: [],
+    surface: { offGrip: 0.7, offDrag: 95, offRolling: 0.06, iceGrip: 1, ice: [] },
+    theme: {
+      sky: { sun: [100, 40, 100], turbidity: 6, rayleigh: 1.5 },
+      fog: { color: '#bcd6ec', near: 120, far: 450 },
+      hemisphere: { sky: '#dfefff', ground: '#4a6b3a', intensity: 0.6 },
+      sun: { color: '#ffffff', intensity: 1.6 },
+      ground: { style: 'grass', a: '#5b9a4a', b: '#4f8c40' },
+      hills: 0.6,
+      walls: ['#c62828', '#eeeeee'],
+      curbs: ['#d32f2f', '#f4f4f4'],
+      scatter: [
+        { kind: 'pine', count: 120 },
+        { kind: 'broadleaf', count: 80 },
+        { kind: 'bush', count: 100 },
+      ],
+      weather: 'none',
+      landmark: 'none',
+    },
+  },
+
   // ---- 숲 서킷: 지금까지의 코스 (시케인 · 언덕 위 헤어핀 · 골짜기 S자 · 점프대) ----
   forest: {
     id: 'forest',
@@ -64,6 +111,7 @@ export const MAPS: Record<MapId, MapDef> = {
     ],
     camelback: { center: 330, riseLength: 25, fallLength: 45, height: 2.5 },
     jumpStart: 1100,
+    bumps: [],
     surface: { offGrip: 0.7, offDrag: 95, offRolling: 0.06, iceGrip: 1, ice: [] },
     theme: {
       sky: { sun: [100, 40, 100], turbidity: 6, rayleigh: 1.5 },
@@ -100,6 +148,8 @@ export const MAPS: Record<MapId, MapDef> = {
     ],
     camelback: { center: 1180, riseLength: 25, fallLength: 45, height: 3 },
     jumpStart: 960,
+    // 울퉁불퉁한 모래 노면: 첫 오르막 전 · 언덕 사이 · 남쪽 골짜기 · 점프대 뒤
+    bumps: [[110, 170], [390, 440], [640, 700], [1060, 1120]],
     surface: { offGrip: 0.55, offDrag: 160, offRolling: 0.09, iceGrip: 1, ice: [] },
     theme: {
       sky: { sun: [120, 22, -60], turbidity: 10, rayleigh: 2.2 },
@@ -136,6 +186,7 @@ export const MAPS: Record<MapId, MapDef> = {
     ],
     camelback: null,
     jumpStart: 1190,
+    bumps: [],
     surface: {
       offGrip: 0.5,
       offDrag: 110,
@@ -145,10 +196,11 @@ export const MAPS: Record<MapId, MapDef> = {
       ice: [[140, 200, 1], [560, 615, -1], [870, 915, 1], [995, 1045, -1]],
     },
     theme: {
-      sky: { sun: [-150, 12, 80], turbidity: 3, rayleigh: 3 },
-      fog: { color: '#c9dcf0', near: 90, far: 380 },
-      hemisphere: { sky: '#e8f4ff', ground: '#9fb6cc', intensity: 0.85 },
-      sun: { color: '#ffe8d0', intensity: 1.3 },
+      // 지평선에 걸린 낮은 해: 눈 위로 주황빛, 그늘은 푸르게
+      sky: { sun: [-150, 7, 80], turbidity: 2, rayleigh: 3.5 },
+      fog: { color: '#b9cde6', near: 90, far: 380 },
+      hemisphere: { sky: '#c9ddff', ground: '#8aa2c2', intensity: 0.75 },
+      sun: { color: '#ffc896', intensity: 1.6 },
       ground: { style: 'snow', a: '#f4f8fc', b: '#e6eef7' },
       hills: 1.4,
       walls: ['#1565c0', '#f5f9ff'],
@@ -164,6 +216,96 @@ export const MAPS: Record<MapId, MapDef> = {
       landmark: 'icebergs',
     },
   },
+
+  // ---- 산악 고개: 가장 길고 어려운 코스 · 헤어핀 지그재그로 산을 오르고 · 정상 시케인 · 급경사로 내리꽂는 내리막 ----
+  mountain: {
+    id: 'mountain',
+    name: '산악',
+    scale: 2.1,
+    controlPoints: [
+      [0, -200], [90, -200], [160, -195], [215, -175], [248, -145],
+      [262, -115], [250, -88], [222, -80], [160, -85], [110, -78],
+      [80, -65], [78, -38], [100, -25], [160, -30], [205, -22],
+      [235, -5], [232, 25], [205, 35], [160, 30], [130, 48], [100, 30], [70, 45], [40, 35],
+      [10, 50], [0, 85], [20, 115], [80, 120], [140, 115],
+      [175, 130], [175, 160], [145, 175], [80, 180], [20, 180], [-40, 178],
+      [-90, 165], [-130, 140], [-160, 100], [-175, 40], [-160, -10],
+      [-110, -20], [-60, -5], [-30, -30], [-55, -60], [-110, -70],
+      [-140, -100], [-135, -150], [-100, -190], [-40, -200],
+    ],
+    // 헤어핀 셋을 지그재그로 오르는 오르막 → 정상 시케인 → 북쪽 능선(점프대 · 낙타등) → 서쪽 급경사 내리막 → 골짜기
+    // 가파른 오르막 셋(헤어핀 사이마다 최대 약 20%) → 정상 72m → 서쪽 급경사 내리막(최대 약 30%)으로 확 떨어짐
+    profile: [
+      [0, 0], [140, 0], [240, 22], [320, 25], [420, 45], [500, 48], [600, 66], [680, 70], [740, 72], [960, 72],
+      [1010, 58], [1060, 52], [1130, 52], [1220, 60], [1300, 64], [1480, 64], [1550, 66], [1680, 16], [1780, 0],
+      [1880, -4], [1990, -2], [2080, 0],
+    ],
+    camelback: { center: 1390, riseLength: 25, fallLength: 45, height: 3 },
+    jumpStart: 1080,
+    bumps: [],
+    surface: { offGrip: 0.6, offDrag: 120, offRolling: 0.07, iceGrip: 1, ice: [] },
+    theme: {
+      // 맑은 고산의 아침: 높고 강한 햇빛, 짙푸른 하늘, 정상에서 멀리까지 보이게
+      sky: { sun: [-120, 55, 140], turbidity: 1.8, rayleigh: 2.6 },
+      fog: { color: '#8fb0d6', near: 150, far: 560 },
+      hemisphere: { sky: '#b9d4ff', ground: '#3a5030', intensity: 0.6 },
+      sun: { color: '#fff0d4', intensity: 2.0 },
+      ground: { style: 'grass', a: '#6d8c4a', b: '#617f40' },
+      hills: 2.2,
+      walls: ['#f9a825', '#263238'],
+      curbs: ['#f9a825', '#fafafa'],
+      scatter: [
+        { kind: 'pine', count: 320 },
+        { kind: 'rock', count: 170 },
+        { kind: 'bush', count: 140 },
+        { kind: 'broadleaf', count: 50 },
+      ],
+      weather: 'none',
+      landmark: 'none',
+    },
+  },
+
+  // ---- 랠리: 8자 비포장 코스 · 산 밑 터널과 그 산꼭대기를 다시 지나는 입체 교차 · 낮게 울퉁불퉁한 흙길 ----
+  rally: {
+    id: 'rally',
+    name: '랠리',
+    scale: 2.1,
+    controlPoints: [
+      [150, -95], [100, -95], [50, -50], [0, 0], [-50, 50], [-90, 85], [-130, 100], [-175, 92], [-215, 55],
+      [-235, 10], [-210, -30], [-228, -70], [-185, -100], [-140, -92], [-100, -105], [-50, -50], [0, 0], [50, 50],
+      [95, 88], [135, 112], [180, 95], [205, 55], [238, 22], [222, -15], [242, -55], [215, -95], [185, -110],
+    ],
+    // 아래 길(s≈189, 산 밑 터널) 0m → 서쪽 고리에서 올라 → 위 길(s≈889, 터널 위 산꼭대기) 32m → 동쪽 고리에서 내려옴
+    profile: [[0, 0], [240, 0], [330, 2], [500, 4], [700, 5], [800, 26], [850, 32], [925, 32], [990, 18], [1080, 7], [1180, 5], [1300, 3]],
+    camelback: null,
+    jumpStart: null,
+    // 랠리 요철 구간 (출발 뒤 · 서쪽 고리 둘 · 동쪽 고리 셋)
+    bumps: [[50, 120], [400, 460], [540, 610], [1050, 1110], [1150, 1210], [1330, 1390]],
+    bumpHeight: 0.35,
+    surface: { offGrip: 0.6, offDrag: 110, offRolling: 0.07, iceGrip: 1, ice: [] },
+    tunnel: [150, 230],
+    theme: {
+      // 먼지 낀 늦은 오후: 낮은 호박색 해, 황토빛 안개
+      sky: { sun: [140, 15, -90], turbidity: 9, rayleigh: 1.8 },
+      fog: { color: '#d6b98f', near: 90, far: 380 },
+      hemisphere: { sky: '#ffdcae', ground: '#5a4630', intensity: 0.65 },
+      sun: { color: '#ffc27a', intensity: 2.0 },
+      ground: { style: 'grass', a: '#7d8a4c', b: '#717d44' },
+      road: 'dirt',
+      hills: 1.6,
+      walls: ['#8d6e63', '#e0d3bd'],
+      curbs: ['#8d6e63', '#e0d3bd'],
+      scatter: [
+        { kind: 'pine', count: 220 },
+        { kind: 'broadleaf', count: 90 },
+        { kind: 'rock', count: 160 },
+        { kind: 'dryBush', count: 200 },
+      ],
+      weather: 'dust',
+      landmark: 'none',
+    },
+  },
 }
 
-export const MAP_IDS = Object.keys(MAPS) as MapId[]
+/** 방에서 고를 수 있는 맵 (대기실 연습장은 빼고) */
+export const MAP_IDS = (Object.keys(MAPS) as MapId[]).filter((id) => id !== 'lobby')

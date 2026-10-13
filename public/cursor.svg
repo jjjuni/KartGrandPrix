@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- 기본 커서: 빨간 화살표 + 흰 테두리 (밝은 · 어두운 배경 모두 보이게 바깥 어두운 선) -->
+  <path d="M3 2 L20 11 L12.5 13 L9 21 Z" fill="#d32f2f" stroke="#0e1a3d" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M3 2 L20 11 L12.5 13 L9 21 Z" fill="#d32f2f" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/>
+</svg>

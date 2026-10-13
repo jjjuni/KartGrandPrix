@@ -161,7 +161,7 @@ export default function Kart({ position = [0, 1, 0], yaw = 0 }: KartProps) {
     const q = b.quaternion
     t.up.set(0, 1, 0).applyQuaternion(t.quat.set(q.x, q.y, q.z, q.w))
     g.flippedTime = t.up.y < 0.3 ? g.flippedTime + delta : 0
-    const nearest = nearestSample(b.position.x, b.position.z)
+    const nearest = nearestSample(b.position.x, b.position.z, b.position.y)
     // 바퀴 세기 — 마지막 바퀴를 마친 순간 서버에 도착을 알린다 (기록은 서버가 잰다)
     if (updateLap(nearest.index, centerPoints.length)) sendFinish()
     g.offTrackTime = nearest.distance > WALL_OFFSET + 1.5 ? g.offTrackTime + delta : 0

@@ -59,7 +59,7 @@ export default function MapPicker({ current }: { current: MapId }) {
                 <svg viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden="true" style={{ background: `color-mix(in srgb, ${MAPS[id].theme.ground.b} 45%, transparent)` }}>
                   <path d={d} className="minimap-edge" strokeWidth={6} />
                   <path d={d} className="minimap-road" strokeWidth={4} />
-                  <circle cx={start[0]} cy={start[1]} r={3.5} className="minimap-jump" />
+                  <circle cx={start[0]} cy={start[1]} r={3.5} className="map-start-dot" />
                 </svg>
                 <span>{MAPS[id].name}</span>
               </button>

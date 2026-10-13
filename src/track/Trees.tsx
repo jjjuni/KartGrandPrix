@@ -16,7 +16,14 @@ import { seededRandom } from '../utils/canvasTexture'
 import { isInGrandstand } from './Grandstand'
 import { terrainHeightAt } from './terrain'
 import type { ScatterKind } from './maps'
-import { WALL_OFFSET, currentMap, nearestSample, trackBounds } from './trackData'
+import {
+  SAMPLE_SPACING,
+  TUNNEL,
+  WALL_OFFSET,
+  currentMap,
+  nearestSample,
+  trackBounds,
+} from './trackData'
 
 const MARGIN = 180 // 코스 바깥으로 장식을 흩어 놓는 거리 (m)
 
@@ -204,7 +211,10 @@ function Scatter({ kind, count, seed }: { kind: Kind; count: number; seed: numbe
       const tint = kind.hue[0] + rand() * (kind.hue[1] - kind.hue[0])
       const tilt = (rand() - 0.5) * 0.12
       if (isInGrandstand(x, z)) continue
-      if (nearestSample(x, z).distance < kind.clearance + scale) continue // 방벽 안쪽·도로 위 제외
+      const near = nearestSample(x, z)
+      if (near.distance < kind.clearance + scale) continue // 방벽 안쪽·도로 위 제외
+      const s = near.index * SAMPLE_SPACING
+      if (TUNNEL && near.distance < 80 && s > TUNNEL[0] - 40 && s < TUNNEL[1] + 40) continue // 터널 위 산(Tunnel.tsx)에 묻히지 않게
       list.push({ x, y: terrainHeightAt(x, z) - 0.15, z, scale, rot, tint, tilt })
     }
     return list

@@ -14,6 +14,8 @@ import { currentMap, trackBounds } from './trackData'
 // 날씨: 카메라를 따라다니는 상자 안의 입자 (사막 모래먼지 · 극지 눈)
 // ---------------------------------------------------------------------------
 const BOX = { x: 70, y: 28, z: 70 } // 카메라 주변 입자 범위 (m)
+/** 카메라에 이보다 가까운 입자는 위·아래로 밀어낸다 — 렌즈 바로 앞 입자는 원근 때문에 하늘을 덮는 큰 얼룩으로 보인다 */
+const NEAR = 4
 
 /** 입자 모양: 가운데가 진하고 가장자리가 흐린 동그라미 (기본은 네모) */
 function makeDot() {
@@ -67,6 +69,7 @@ function Weather({ kind }: { kind: 'dust' | 'snow' }) {
       offsets[k] = wrap(offsets[k], BOX.x)
       offsets[k + 1] = wrap(offsets[k + 1], BOX.y)
       offsets[k + 2] = wrap(offsets[k + 2], BOX.z)
+      if (offsets[k] ** 2 + offsets[k + 1] ** 2 + offsets[k + 2] ** 2 < NEAR * NEAR) offsets[k + 1] = offsets[k + 1] < 0 ? -NEAR : NEAR
     }
     geometry.attributes.position.needsUpdate = true
   })

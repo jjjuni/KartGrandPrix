@@ -35,8 +35,8 @@ function SceneReady({ onReady }: { onReady: () => void }) {
 
 export default function App() {
   const o = useOnline()
-  // 방의 맵 (대기실은 숲). 맵이 바뀌면 트랙을 다시 계산하고, 아래 3D 장면을 key로 새로 만든다
-  const wanted: MapId = o.room?.map ?? 'forest'
+  // 방의 맵 (대기실은 둥근 연습장). 맵이 바뀌면 트랙을 다시 계산하고, 아래 3D 장면을 key로 새로 만든다
+  const wanted: MapId = o.room?.map ?? 'lobby'
   const [mapId, setMapId] = useState<MapId | null>(null)
   // 마지막으로 다 그려진 장면의 맵과 그때 있던 방 (로딩 문구를 상황에 맞게 고르는 데 쓴다)
   const [ready, setReady] = useState<{ map: MapId; room: string | null } | null>(null)
@@ -91,11 +91,12 @@ export default function App() {
           <RoomPanel />
           <ResultsBoard />
           <KeyGuide />
-          <Minimap key={mapId} />
-          <Hud />
         </>
       )}
-      <VehiclePicker />
+      {/* 미니맵 · 계기판은 닉네임 · 대기실에서도 (연습장을 달릴 수 있으니) */}
+      {ready && <Minimap key={mapId} />}
+      {ready && <Hud />}
+      {ready && <VehiclePicker />}
       <Countdown />
       {ready?.map !== wanted && (
         <LoadingScreen

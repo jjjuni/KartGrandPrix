@@ -14,7 +14,7 @@ const MAX_PER_ROOM = 8 // src/track/trackData.ts의 GRID_SLOTS와 같게
 const MAX_ROOMS = 50
 // 카트 상태: 위치·회전·속도 + 조향각(steer) · 미끄러지는 바퀴(skid, 4비트) · 레이스 진행도(progress, 바퀴 단위)
 const FIELDS = ['x', 'y', 'z', 'qx', 'qy', 'qz', 'qw', 'speed', 'steer', 'skid', 'progress']
-const MAPS = ['forest', 'desert', 'polar'] // src/track/maps.ts의 MapId와 같게
+const MAPS = ['forest', 'desert', 'polar', 'mountain', 'rally'] // src/track/maps.ts의 MapId와 같게
 const SPEEDS = ['normal', 'fast', 'faster'] // 방 속도: 기본 · 빠름 · 매우 빠름 (가속·최고속도는 각자 브라우저가 적용)
 const VEHICLES = ['kart', 'bike'] // 고를 수 있는 차량 (모양만 다르고 주행 물리는 같다)
 const MAX_HIT = 15 // 충돌로 상대에게 줄 수 있는 최대 속도 변화 (m/s)
